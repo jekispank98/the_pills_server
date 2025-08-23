@@ -1,0 +1,4 @@
+ALTER TABLE users
+ADD COLUMN name TEXT,
+ADD COLUMN token_expires_at TIMESTAMP,
+ADD COLUMN subscribed BOOLEAN DEFAULT false;
