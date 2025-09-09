@@ -35,7 +35,7 @@ pub struct LoginUserDto {
 
 #[derive(Debug, Serialize)]
 pub struct LoginResponseDto {
-    pub id: String,
+    pub id: i32,
     pub login: String,
     pub name: String,
     pub token: String,
@@ -54,4 +54,16 @@ impl From<User> for LoginResponseDto {
             subscribed: user.subscribed,
         }
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct Response {
+    pub status: &'static str,
+    pub message: String,
+}
+
+#[derive(Serialize, Deserialize, Validate)]
+pub struct VerifyEmailQueryDto {
+    #[validate(length(min = 1, message = "Token is required."),)]
+    pub token: String,
 }

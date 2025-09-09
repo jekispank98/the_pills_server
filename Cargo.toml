@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.0-rc.1"
+axum-extra = { version = "0.10.1", features = ["cookie"]}
 tokio = { version = "1.42.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"]}
 sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls", "uuid", "derive", "chrono"]}
@@ -15,3 +16,7 @@ serde_json = "1.0.142"
 validator = { version = "0.20.0", features = ["derive"] }
 uuid = { version = "1.18.0", features = ["serde", "v4"] }
 bcrypt = "0.17.1"
+argon2 = "0.5.1"
+lettre = "0.11.18"
+jsonwebtoken = "9.3.1"
+time = "0.3.20"

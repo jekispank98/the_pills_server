@@ -1,12 +1,16 @@
 use crate::db::AuthentificationTrait;
-use crate::dtos::{LoginResponseDto, LoginUserDto, RegisterUserDto};
+use crate::dtos::{LoginResponseDto, LoginUserDto, RegisterUserDto, Response, VerifyEmailQueryDto};
 use crate::error::ErrorMessage;
+use crate::mail::mails::{send_verification_email, send_welcome_email};
 use crate::state::AppState;
+use crate::utils::token;
 use crate::{error::HttpError, root};
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::routing::{Router, get, post};
+use axum::extract::Query;
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Redirect};
+use axum::routing::{get, post, Router};
 use axum::{Extension, Json};
+use axum_extra::extract::cookie::Cookie;
 use chrono::{Duration, NaiveDateTime, Utc};
 use std::sync::Arc;
 use validator::Validate;
@@ -16,68 +20,57 @@ pub fn auth_router() -> Router {
         .route("/login", get(login))
         .route("/google_login", get(root))
         .route("/register", post(register))
+        .route("/verify", get(verify_email))
         .route("/google_register", post(root))
         .route("/refresh_token", post(root))
 }
-
 pub async fn register(
     Extension(app_state): Extension<Arc<AppState>>,
     Json(body): Json<RegisterUserDto>,
 ) -> Result<impl IntoResponse, HttpError> {
-    /* Input data validation */
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
 
-    /* Parse value after validation */
     let login = body.login.unwrap();
-    let password = body.password.unwrap();
     let name = body.name.unwrap();
 
-    /* Check if user already exists */
-    let existing_user = app_state
+    let password_hash = bcrypt::hash(body.password.unwrap(), bcrypt::DEFAULT_COST)
+        .map_err(|_| HttpError::server_error(ErrorMessage::HashingError.to_string()))?;
+
+    let token = generate_token();
+    let token_expires_at = Some(calculate_expiration());
+
+    let user = app_state
         .db_client
-        .check_is_user_exist(login.clone())
+        .save_user(name.clone(), login.clone(), password_hash, token_expires_at.unwrap(), token.clone())
         .await
-        .map_err(|_| HttpError::server_error(ErrorMessage::ServerError.to_string()))?;
-    if existing_user.is_some() {
-        Err(HttpError::unique_constraint_violation(
-            ErrorMessage::EmailExist.to_string(),
-        ))
-    } else {
-        println!("User does not exist - creating");
-        let password_hash = bcrypt::hash(&password, bcrypt::DEFAULT_COST)
-            .map_err(|_| HttpError::server_error(ErrorMessage::HashingError.to_string()))?;
+        .map_err(|e| {
+            if let Some(db_err) = e.as_database_error() {
+                if db_err.is_unique_violation() {
+                    return HttpError::unique_constraint_violation(
+                        ErrorMessage::EmailExist.to_string(),
+                    );
+                }
+            }
+            HttpError::server_error(e.to_string())
+        })?;
 
-        /* Generate user ID and token */
-        let user_id = uuid::Uuid::new_v4().to_string();
-        let token = generate_token();
-        let token_expires_at = calculate_expiration();
+    let send_email_result = send_verification_email(&user.login, &user.name, &token).await;
 
-        /* Save user to database */
-        let user = app_state
-            .db_client
-            .save_user(
-                name,
-                login.clone(),
-                password_hash,
-                user_id,
-                token_expires_at,
-            )
-            .await
-            .map_err(|_| HttpError::server_error(ErrorMessage::ServerError.to_string()))?;
-
-        /* Build DTO Response */
-        let response = LoginResponseDto {
-            id: user.id,
-            login: user.login,
-            name: user.name,
-            token,
-            token_expires_at,
-            subscribed: user.subscribed,
-        };
-
-        Ok((StatusCode::CREATED, Json(response)))
+    if let Err(e) = send_email_result {
+        eprintln!("Failed to send verification email: {}", e);
+        // Здесь можно принять решение, как реагировать. Например, залогировать и
+        // сообщить пользователю, что письмо будет отправлено позже.
+        // Или откатить транзакцию, если это возможно.
     }
+
+    let response = Response {
+        status: "success",
+        message: "Registration successful! Please check your email to verify your account."
+            .to_string(),
+    };
+
+    Ok((StatusCode::CREATED, Json(response)))
 }
 pub async fn login(
     Extension(app_state): Extension<Arc<AppState>>,
@@ -98,8 +91,6 @@ pub async fn login(
         .map_err(|_| HttpError::server_error(ErrorMessage::ServerError.to_string()))?
         .ok_or_else(|| HttpError::unauthorized(ErrorMessage::WrongCredentials.to_string()))?;
 
-    // Проверка пароля (предполагая, что password - хэш)
-    // В реальности нужно использовать bcrypt или аналоги
     if user.password != password {
         return Err(HttpError::unauthorized(
             ErrorMessage::WrongCredentials.to_string(),
@@ -127,12 +118,78 @@ pub async fn login(
 
     Ok(Json(response))
 }
+pub async fn verify_email(
+    Query(query_params): Query<VerifyEmailQueryDto>,
+    Extension(app_state): Extension<Arc<AppState>>,
+) -> Result<impl IntoResponse, HttpError> {
+    println!("verify email is started");
+    query_params
+        .validate()
+        .map_err(|e| HttpError::bad_request(e.to_string()))?;
 
+    let result = app_state
+        .db_client
+        .get_user(None, None, None, Some(&query_params.token))
+        .await
+        .map_err(|e| HttpError::server_error(e.to_string()))?;
+
+    let user = result.ok_or(HttpError::unauthorized(
+        ErrorMessage::InvalidToken.to_string(),
+    ))?;
+
+    // Проверяем, что токен не просрочен
+    if Utc::now().naive_utc() > user.token_expires_at {
+        return Err(HttpError::bad_request(
+            "Verification token has expired".to_string(),
+        ))?;
+    }
+
+    // Если дошли сюда - токен валиден и не просрочен
+    app_state
+        .db_client
+        .verified_token(&query_params.token)
+        .await
+        .map_err(|e| HttpError::server_error(e.to_string()))?;
+
+    let send_welcome_email_result = send_welcome_email(&user.login, &user.name).await;
+
+    if let Err(e) = send_welcome_email_result {
+        eprintln!("Failed to send welcome email: {}", e);
+    }
+
+    let token = token::create_token(
+        &user.id.to_string(),
+        app_state.config.jwt_secret.as_bytes(),
+        app_state.config.jwt_maxage,
+    )
+        .map_err(|e| HttpError::server_error(e.to_string()))?;
+
+    let cookie_duration = time::Duration::minutes(app_state.config.jwt_maxage * 60);
+    let cookie = Cookie::build(("token", token.clone()))
+        .path("/")
+        .max_age(cookie_duration)
+        .http_only(true)
+        .build();
+
+    let mut headers = HeaderMap::new();
+
+    headers.append(header::SET_COOKIE, cookie.to_string().parse().unwrap());
+
+    let frontend_url = format!("http://localhost:5173/settings");
+
+    let redirect = Redirect::to(&frontend_url);
+
+    let mut response = redirect.into_response();
+
+    response.headers_mut().extend(headers);
+
+    Ok(response)
+}
 pub fn generate_token() -> String {
     uuid::Uuid::new_v4().to_string()
 }
 
 pub fn calculate_expiration() -> NaiveDateTime {
-    let datetime_utc = Utc::now() + Duration::hours(24);
-    datetime_utc.naive_utc() // Преобразуем в NaiveDateTime
+    let datetime_utc = Utc::now() + Duration::days(2);
+    datetime_utc.naive_utc()
 }

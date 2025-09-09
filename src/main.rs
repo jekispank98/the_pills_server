@@ -6,14 +6,16 @@ mod handlers;
 mod models;
 mod routes;
 mod state;
+mod utils;
+mod mail;
 
 use crate::routes::create_routes;
 use chrono::NaiveDateTime;
 use config::Config;
 use dotenv;
 use models::user::User;
-use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, PgPool};
+use serde::Deserialize;
+use sqlx::PgPool;
 use state::{AppState, SharedState};
 use std::env;
 use tokio::net::TcpListener;
@@ -25,7 +27,11 @@ struct UserRequest {
     password: String,
     name: String,
     token_expires_at: NaiveDateTime,
-    subscribed: bool,
+    verified: bool,
+    created_at: NaiveDateTime,
+    updated_at: NaiveDateTime,
+    verification_token: String,
+    subscribed: bool
 }
 
 async fn root() -> &'static str {
