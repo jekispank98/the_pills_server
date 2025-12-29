@@ -20,7 +20,7 @@ use state::{AppState, SharedState};
 use std::env;
 use tokio::net::TcpListener;
 
-#[derive(Deserialize)]
+/*#[derive(Deserialize)]
 struct UserRequest {
     id: String,
     login: String,
@@ -32,7 +32,7 @@ struct UserRequest {
     updated_at: NaiveDateTime,
     verification_token: String,
     subscribed: bool
-}
+}*/
 
 async fn root() -> &'static str {
     "Hello World!"

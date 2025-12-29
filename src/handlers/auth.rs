@@ -1,3 +1,4 @@
+use std::fs;
 use crate::db::AuthentificationTrait;
 use crate::dtos::{LoginResponseDto, LoginUserDto, RegisterUserDto, Response, VerifyEmailQueryDto};
 use crate::error::ErrorMessage;
@@ -7,7 +8,7 @@ use crate::utils::token;
 use crate::{error::HttpError, root};
 use axum::extract::Query;
 use axum::http::{header, HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Redirect};
+use axum::response::{Html, IntoResponse, Redirect};
 use axum::routing::{get, post, Router};
 use axum::{Extension, Json};
 use axum_extra::extract::cookie::Cookie;
@@ -31,7 +32,7 @@ pub async fn register(
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
 
-    let login = body.login.unwrap();
+    let login = body.email.unwrap();
     let name = body.name.unwrap();
 
     let password_hash = bcrypt::hash(body.password.unwrap(), bcrypt::DEFAULT_COST)
@@ -55,7 +56,7 @@ pub async fn register(
             HttpError::server_error(e.to_string())
         })?;
 
-    let send_email_result = send_verification_email(&user.login, &user.name, &token).await;
+    let send_email_result = send_verification_email(&user.email, &user.name, &token).await;
 
     if let Err(e) = send_email_result {
         eprintln!("Failed to send verification email: {}", e);
@@ -81,17 +82,17 @@ pub async fn login(
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
 
     /* Parse value after validation */
-    let login = body.login.unwrap(); // safe после валидации
+    let email = body.email.unwrap(); // safe после валидации
     let password = body.password.unwrap();
-
     let user = app_state
         .db_client
-        .check_is_user_exist(login)
+        .check_is_user_exist(email)
         .await
         .map_err(|_| HttpError::server_error(ErrorMessage::ServerError.to_string()))?
         .ok_or_else(|| HttpError::unauthorized(ErrorMessage::WrongCredentials.to_string()))?;
 
-    if user.password != password {
+    if !bcrypt::verify(password, &user.password)
+        .map_err(|_| HttpError::server_error(ErrorMessage::HashingError.to_string()))? {
         return Err(HttpError::unauthorized(
             ErrorMessage::WrongCredentials.to_string(),
         ));
@@ -109,7 +110,7 @@ pub async fn login(
     /* Build DTO Response */
     let response = LoginResponseDto {
         id: user.id,
-        login: user.login,
+        email: user.email,
         name: user.name,
         token,
         token_expires_at,
@@ -126,32 +127,31 @@ pub async fn verify_email(
     query_params
         .validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
-
+    println!("Received token: {}", query_params.token);
     let result = app_state
         .db_client
         .get_user(None, None, None, Some(&query_params.token))
         .await
         .map_err(|e| HttpError::server_error(e.to_string()))?;
-
+    println!("DB search result: {:?}", result);
     let user = result.ok_or(HttpError::unauthorized(
         ErrorMessage::InvalidToken.to_string(),
     ))?;
 
     // Проверяем, что токен не просрочен
-    if Utc::now().naive_utc() > user.token_expires_at {
+    if Utc::now().naive_utc() > user.token_expires_at.expect("Verification token has expired") {
         return Err(HttpError::bad_request(
             "Verification token has expired".to_string(),
         ))?;
     }
-
-    // Если дошли сюда - токен валиден и не просрочен
+    println!("дошли сюда");
     app_state
         .db_client
         .verified_token(&query_params.token)
         .await
         .map_err(|e| HttpError::server_error(e.to_string()))?;
 
-    let send_welcome_email_result = send_welcome_email(&user.login, &user.name).await;
+    let send_welcome_email_result = send_welcome_email(&user.email, &user.name).await;
 
     if let Err(e) = send_welcome_email_result {
         eprintln!("Failed to send welcome email: {}", e);
@@ -172,18 +172,12 @@ pub async fn verify_email(
         .build();
 
     let mut headers = HeaderMap::new();
-
     headers.append(header::SET_COOKIE, cookie.to_string().parse().unwrap());
-
-    let frontend_url = format!("http://localhost:5173/settings");
-
-    let redirect = Redirect::to(&frontend_url);
-
-    let mut response = redirect.into_response();
-
-    response.headers_mut().extend(headers);
-
-    Ok(response)
+    let success_html = "src/mail/templates/VerificationSuccess.html";
+    let mut html_content = fs::read_to_string(success_html)
+        .unwrap_or_else(|_| "<h1>Аккаунт подтвержден!</h1>".to_string());
+    html_content = html_content.replace("{{username}}", &user.name);
+    Ok((headers, Html(html_content)))
 }
 pub fn generate_token() -> String {
     uuid::Uuid::new_v4().to_string()

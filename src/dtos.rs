@@ -7,7 +7,7 @@ use validator::Validate;
 pub struct RegisterUserDto {
     #[validate(required(message = "Login is required"))]
     #[validate(length(min = 3, max = 50, message = "Login must be 3-50 characters"))]
-    pub login: Option<String>,
+    pub email: Option<String>,
 
     #[validate(required(message = "Password is required"))]
     #[validate(length(min = 6, message = "Password must be at least 6 characters"))]
@@ -26,7 +26,7 @@ pub struct LoginUserDto {
         max = 50,
         message = "Login must be between 3 and 50 characters"
     ))]
-    pub login: Option<String>,
+    pub email: Option<String>,
 
     #[validate(required(message = "Password is required"))]
     #[validate(length(min = 6, message = "Password must be at least 6 characters"))]
@@ -36,7 +36,7 @@ pub struct LoginUserDto {
 #[derive(Debug, Serialize)]
 pub struct LoginResponseDto {
     pub id: i32,
-    pub login: String,
+    pub email: String,
     pub name: String,
     pub token: String,
     pub token_expires_at: NaiveDateTime,
@@ -47,10 +47,10 @@ impl From<User> for LoginResponseDto {
     fn from(user: User) -> Self {
         LoginResponseDto {
             id: user.id,
-            login: user.login,
+            email: user.email,
             name: user.name,
             token: "".to_string(),
-            token_expires_at: user.token_expires_at,
+            token_expires_at: user.token_expires_at.expect("User has no token"),
             subscribed: user.subscribed,
         }
     }

@@ -1,4 +1,3 @@
-use crate::handlers::auth::generate_token;
 use crate::User;
 use chrono::NaiveDateTime;
 use sqlx::{query_as, Error, Pool, Postgres};
@@ -26,7 +25,7 @@ pub struct UserQueryFilters<'a> {
 const USER_SELECT_QUERY: &str = r#"
     SELECT 
         id, 
-        login, 
+        email,
         password, 
         name,
         token_expires_at, 
@@ -100,11 +99,10 @@ impl AuthentificationTrait for DbClient {
         token_expires_at: NaiveDateTime,
         verification_token: String,
     ) -> Result<User, Error> {
-        let verification_token = generate_token(); // Нужно сгенерировать токен
         let query = r#"
-    INSERT INTO users(name, login, password, token_expires_at, subscribed, verification_token)
+    INSERT INTO users(name, email, password, token_expires_at, subscribed, verification_token)
     VALUES ($1, $2, $3, $4, $5, $6)
-    RETURNING id, name, login, password, token_expires_at, subscribed, verified, created_at, updated_at, verification_token"#;
+    RETURNING id, name, email, password, token_expires_at, subscribed, verified, created_at, updated_at, verification_token"#;
 
         query_as::<_, User>(query)
             .bind(name)
@@ -119,15 +117,17 @@ impl AuthentificationTrait for DbClient {
 
     async fn check_is_user_exist(&self, email: String) -> Result<Option<User>, Error> {
         let query = r#"
-    SELECT id, name, login, password, token_expires_at, subscribed, verified, created_at, updated_at, verification_token
+    SELECT id, name, email, password, token_expires_at, subscribed, verified, created_at, updated_at, verification_token
     FROM users
-    WHERE login = $1
+    WHERE email = $1
     "#;
 
-        query_as::<_, User>(query)
+        let q = query_as::<_, User>(query)
             .bind(email)
             .fetch_optional(&self.pool)
-            .await
+            .await;
+        println!("result : {:?}", q);
+        q
     }
 
     async fn delete_user_by_id(&self, user_id: &str) -> Result<bool, Error> {
