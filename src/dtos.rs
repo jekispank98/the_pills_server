@@ -33,6 +33,13 @@ pub struct LoginUserDto {
     pub password: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Validate)]
+pub struct GoogleLoginDto {
+    #[validate(required(message = "Google ID token is required"))]
+    #[validate(length(min = 10, message = "Invalid Google ID token"))]
+    pub id_token: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct LoginResponseDto {
     pub id: i32,
