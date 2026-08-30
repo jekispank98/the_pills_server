@@ -24,8 +24,12 @@ use crate::models::google_auth::{GoogleJwks, GoogleTokenPayload};
 
 pub fn auth_router() -> Router {
     Router::new()
-        .route("/login", get(login))
-        .route("/google_login", get(google_login))
+        // POST, не GET: оба принимают JSON-тело, а не query-параметры.
+        // GET с телом — валидный HTTP, но многие клиенты (в частности,
+        // Ktor + OkHttp-движок на Android) сами отказываются его отправлять
+        // (`method GET must not have a request body`).
+        .route("/login", post(login))
+        .route("/google_login", post(google_login))
         .route("/register", post(register))
         .route("/verify", get(verify_email))
         .route("/google_register", post(root))
@@ -46,12 +50,14 @@ pub async fn register(
     let token = generate_token();
     let token_expires_at = calculate_expiration();
 
-    // `save_user` возвращает sqlx::Error, который конвертируется в HttpError через
-    // `From<sqlx::Error>` (см. error.rs) — там уже учтён unique_violation → 409
-    // EmailExist, и наружу не утекают детали Postgres.
-    let user = app_state
+    // `register_user_with_self_person` возвращает sqlx::Error, который
+    // конвертируется в HttpError через `From<sqlx::Error>` (см. error.rs) — там
+    // уже учтён unique_violation → 409 EmailExist, и наружу не утекают детали
+    // Postgres. User и его SELF-`Person` создаются одной транзакцией — как в
+    // Android `UserRepositoryImpl.signUp`.
+    let (user, _self_person) = app_state
         .db_client
-        .save_user(name, email, password_hash, token_expires_at, token.clone())
+        .register_user_with_self_person(name, email, password_hash, token_expires_at, token.clone())
         .await?;
 
     let verification_link = app_state.config.verification_link(&token);
