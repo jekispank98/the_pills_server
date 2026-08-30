@@ -14,10 +14,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.142"
 validator = { version = "0.20.0", features = ["derive"] }
 
-sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls", "derive", "chrono"] }
+sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls", "derive", "chrono", "uuid"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 async-trait = "0.1.89"
-uuid = { version = "1.18.0", features = ["v4"] }
+# "serde" — users.id/persons.id are Uuid and go straight into JSON DTOs.
+uuid = { version = "1.18.0", features = ["v4", "serde"] }
 
 # Пароли: argon2 — для новых хешей, bcrypt — только для проверки исторических.
 argon2 = "0.5.1"

@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use sqlx::FromRow;
 use std::fmt;
+use uuid::Uuid;
 
 /// Модель строки таблицы `users`.
 ///
@@ -8,7 +9,9 @@ use std::fmt;
 /// клиенту хеш пароля. Наружу пользователь уходит только через DTO.
 #[derive(FromRow)]
 pub struct User {
-    pub id: i32,
+    /// Генерируется сервером (`DEFAULT gen_random_uuid()`) — регистрация и так
+    /// требует сети, офлайн-генерация тут не нужна (в отличие от `Person.id`).
+    pub id: Uuid,
     pub email: String,
     /// `None` у аккаунтов, созданных через Google.
     pub password: Option<String>,
@@ -22,6 +25,9 @@ pub struct User {
     pub subscribed: bool,
     /// Claim `sub` из Google ID-токена: стабилен, в отличие от email.
     pub google_sub: Option<String>,
+    pub photo_url: Option<String>,
+    pub time_zone: Option<String>,
+    pub locale: Option<String>,
 }
 
 impl User {
@@ -50,6 +56,9 @@ impl fmt::Debug for User {
             .field("verified", &self.verified)
             .field("subscribed", &self.subscribed)
             .field("google_sub", &self.google_sub.as_ref().map(|_| "<set>"))
+            .field("photo_url", &self.photo_url)
+            .field("time_zone", &self.time_zone)
+            .field("locale", &self.locale)
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
@@ -62,7 +71,7 @@ mod tests {
 
     fn sample() -> User {
         User {
-            id: 1,
+            id: Uuid::nil(),
             email: "user@example.com".into(),
             password: Some("$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$hash".into()),
             name: "User".into(),
@@ -73,6 +82,9 @@ mod tests {
             verification_token: Some("secret-token".into()),
             subscribed: false,
             google_sub: None,
+            photo_url: None,
+            time_zone: None,
+            locale: None,
         }
     }
 

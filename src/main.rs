@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod dtos;
 mod error;
+mod extractors;
 mod handlers;
 mod models;
 mod routes;
