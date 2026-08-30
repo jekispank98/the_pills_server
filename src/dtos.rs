@@ -1,12 +1,10 @@
-use crate::models::user::User;
-use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct RegisterUserDto {
-    #[validate(required(message = "Login is required"))]
-    #[validate(length(min = 3, max = 50, message = "Login must be 3-50 characters"))]
+    #[validate(required(message = "Email is required"))]
+    #[validate(length(min = 3, max = 50, message = "Email must be 3-50 characters"))]
     pub email: Option<String>,
 
     #[validate(required(message = "Password is required"))]
@@ -20,11 +18,11 @@ pub struct RegisterUserDto {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct LoginUserDto {
-    #[validate(required(message = "Login is required"))]
+    #[validate(required(message = "Email is required"))]
     #[validate(length(
         min = 3,
         max = 50,
-        message = "Login must be between 3 and 50 characters"
+        message = "Email must be between 3 and 50 characters"
     ))]
     pub email: Option<String>,
 
@@ -46,21 +44,7 @@ pub struct LoginResponseDto {
     pub email: String,
     pub name: String,
     pub token: String,
-    pub token_expires_at: NaiveDateTime,
     pub subscribed: bool,
-}
-
-impl From<User> for LoginResponseDto {
-    fn from(user: User) -> Self {
-        LoginResponseDto {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            token: "".to_string(),
-            token_expires_at: user.token_expires_at.expect("User has no token"),
-            subscribed: user.subscribed,
-        }
-    }
 }
 
 #[derive(Serialize, Deserialize)]

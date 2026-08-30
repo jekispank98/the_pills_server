@@ -10,29 +10,11 @@ mod utils;
 mod mail;
 
 use crate::routes::create_routes;
-use chrono::NaiveDateTime;
 use config::Config;
-use dotenv;
-use models::user::User;
-use serde::Deserialize;
 use sqlx::PgPool;
 use state::{AppState, SharedState};
-use std::env;
 use tokio::net::TcpListener;
-
-/*#[derive(Deserialize)]
-struct UserRequest {
-    id: String,
-    login: String,
-    password: String,
-    name: String,
-    token_expires_at: NaiveDateTime,
-    verified: bool,
-    created_at: NaiveDateTime,
-    updated_at: NaiveDateTime,
-    verification_token: String,
-    subscribed: bool
-}*/
+use tracing_subscriber::EnvFilter;
 
 async fn root() -> &'static str {
     "Hello World!"
@@ -42,19 +24,24 @@ async fn root() -> &'static str {
 async fn main() {
     dotenv::dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL").expect("Database url is not set in env file");
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .init();
 
-    let db_pool = PgPool::connect(&database_url)
+    let config = Config::from_env().expect("invalid configuration");
+    let listen_addr = config.listen_addr;
+
+    let db_pool = PgPool::connect(&config.database_url)
         .await
-        .expect("Failed to connect to Postgres");
-
-    let config = Config::init();
+        .expect("failed to connect to Postgres");
 
     let app_state = SharedState::new(AppState::new(db_pool, config));
-
     let app = create_routes(app_state);
 
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    let listener = TcpListener::bind(listen_addr)
+        .await
+        .expect("failed to bind listen address");
 
-    axum::serve(listener, app).await.unwrap()
+    tracing::info!(%listen_addr, "starting server");
+    axum::serve(listener, app).await.expect("server error");
 }
