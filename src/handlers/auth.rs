@@ -24,8 +24,12 @@ use crate::models::google_auth::{GoogleJwks, GoogleTokenPayload};
 
 pub fn auth_router() -> Router {
     Router::new()
-        .route("/login", get(login))
-        .route("/google_login", get(google_login))
+        // POST, не GET: оба принимают JSON-тело, а не query-параметры.
+        // GET с телом — валидный HTTP, но многие клиенты (в частности,
+        // Ktor + OkHttp-движок на Android) сами отказываются его отправлять
+        // (`method GET must not have a request body`).
+        .route("/login", post(login))
+        .route("/google_login", post(google_login))
         .route("/register", post(register))
         .route("/verify", get(verify_email))
         .route("/google_register", post(root))
