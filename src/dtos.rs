@@ -124,6 +124,7 @@ pub struct PersonDto {
     pub photo_url: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    pub version: i32,
 }
 
 impl From<Person> for PersonDto {
@@ -143,6 +144,7 @@ impl From<Person> for PersonDto {
             photo_url: person.photo_url,
             created_at: person.created_at,
             updated_at: person.updated_at,
+            version: person.version,
         }
     }
 }
@@ -166,6 +168,11 @@ pub struct UpsertPersonRequest {
     #[serde(default = "default_true")]
     pub is_active: bool,
     pub photo_url: Option<String>,
+    /// Последняя версия, известная клиенту (0 для новой персоны). Апдейт
+    /// применяется только если совпадает с текущей версией в БД — иначе
+    /// `PersonUpsertOutcome::VersionConflict`.
+    #[serde(default)]
+    pub base_version: i32,
 }
 
 fn default_true() -> bool {
@@ -187,6 +194,7 @@ mod tests {
         assert_eq!(request.gender, Gender::Unspecified);
         assert!(request.is_active);
         assert_eq!(request.name.as_deref(), Some("Mom"));
+        assert_eq!(request.base_version, 0);
     }
 
     #[test]

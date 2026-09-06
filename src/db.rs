@@ -45,7 +45,7 @@ const USER_SELECT_QUERY: &str = r#"
 // Общий список колонок `persons` — переиспользуется и в SELECT, и в RETURNING
 // у INSERT/UPDATE, чтобы не дублировать (и не рассинхронизировать) список полей.
 const PERSON_COLUMNS: &str = "id, user_account_id, name, relation, is_user, birth_date, gender, \
-    weight_kg, color_tag, notes, is_active, photo_url, created_at, updated_at";
+    weight_kg, color_tag, notes, is_active, photo_url, created_at, updated_at, version";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FilterBind<'a> {
@@ -106,6 +106,9 @@ pub struct PersonUpsert {
     pub notes: Option<String>,
     pub is_active: bool,
     pub photo_url: Option<String>,
+    /// Последняя версия, известная клиенту — 0 для новой персоны. См.
+    /// `PersonRepositoryTrait::upsert_person`/`decide_upsert_route`.
+    pub base_version: i32,
 }
 
 #[async_trait::async_trait]
@@ -160,10 +163,33 @@ pub trait AuthentificationTrait {
     async fn verified_token(&self, token: &str) -> Result<(), Error>;
 }
 
-/// Итог апсерта: успешно, либо чужой `id` (конфликт владения).
+/// Итог апсерта: успешно, чужой `id` (конфликт владения), либо устаревшая
+/// `base_version` (конфликт версии — `VersionConflict` несёт актуальную запись,
+/// чтобы клиент мог сделать rebase-and-retry-once).
 pub enum PersonUpsertOutcome {
     Ok(Person),
     OwnedByAnotherUser,
+    VersionConflict(Person),
+}
+
+/// Куда должен пойти upsert по итогам ownership pre-check — единственная часть
+/// решения, которая не требует атомарности с самой записью в БД (в отличие от
+/// version-guard, который обязан быть частью одного UPDATE ... WHERE, иначе
+/// теряется гарантия атомарности), поэтому вынесена в чистую функцию и
+/// unit-тестируется без БД.
+#[derive(Debug, PartialEq, Eq)]
+enum UpsertRoute {
+    Insert,
+    UpdateIfVersionMatches,
+    OwnedByAnotherUser,
+}
+
+fn decide_upsert_route(existing_owner: Option<Uuid>, requesting_user: Uuid) -> UpsertRoute {
+    match existing_owner {
+        None => UpsertRoute::Insert,
+        Some(owner) if owner == requesting_user => UpsertRoute::UpdateIfVersionMatches,
+        Some(_) => UpsertRoute::OwnedByAnotherUser,
+    }
 }
 
 #[async_trait::async_trait]
@@ -397,51 +423,93 @@ impl PersonRepositoryTrait for DbClient {
                 .fetch_optional(&mut *tx)
                 .await?;
 
-        if let Some(owner) = existing_owner {
-            if owner != user_account_id {
+        match decide_upsert_route(existing_owner, user_account_id) {
+            UpsertRoute::OwnedByAnotherUser => {
                 tx.rollback().await?;
-                return Ok(PersonUpsertOutcome::OwnedByAnotherUser);
+                Ok(PersonUpsertOutcome::OwnedByAnotherUser)
             }
-        }
-
-        let query = format!(
-            r#"
+            UpsertRoute::Insert => {
+                // Новая строка — version стартует с DEFAULT 0 колонки, base_version
+                // клиента здесь не участвует (это не апдейт, конфликтовать не с чем).
+                let query = format!(
+                    r#"
     INSERT INTO persons(id, user_account_id, name, relation, is_user, birth_date, gender,
                          weight_kg, color_tag, notes, is_active, photo_url)
     VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8, $9, $10, $11)
-    ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        relation = EXCLUDED.relation,
-        birth_date = EXCLUDED.birth_date,
-        gender = EXCLUDED.gender,
-        weight_kg = EXCLUDED.weight_kg,
-        color_tag = EXCLUDED.color_tag,
-        notes = EXCLUDED.notes,
-        is_active = EXCLUDED.is_active,
-        photo_url = EXCLUDED.photo_url,
-        updated_at = NOW()
     RETURNING {PERSON_COLUMNS}
 "#
-        );
+                );
 
-        let saved = query_as::<_, Person>(&query)
-            .bind(person.id)
-            .bind(user_account_id)
-            .bind(person.name)
-            .bind(person.relation)
-            .bind(person.birth_date)
-            .bind(person.gender)
-            .bind(person.weight_kg)
-            .bind(person.color_tag)
-            .bind(person.notes)
-            .bind(person.is_active)
-            .bind(person.photo_url)
-            .fetch_one(&mut *tx)
-            .await?;
+                let saved = query_as::<_, Person>(&query)
+                    .bind(person.id)
+                    .bind(user_account_id)
+                    .bind(person.name)
+                    .bind(person.relation)
+                    .bind(person.birth_date)
+                    .bind(person.gender)
+                    .bind(person.weight_kg)
+                    .bind(person.color_tag)
+                    .bind(person.notes)
+                    .bind(person.is_active)
+                    .bind(person.photo_url)
+                    .fetch_one(&mut *tx)
+                    .await?;
 
-        tx.commit().await?;
+                tx.commit().await?;
+                Ok(PersonUpsertOutcome::Ok(saved))
+            }
+            UpsertRoute::UpdateIfVersionMatches => {
+                // Не INSERT ... ON CONFLICT ... WHERE: если WHERE исключает строку,
+                // Postgres всё равно считает conflict-target удовлетворённым и молча
+                // не делает апдейт — нет способа отличить "версия не совпала" от
+                // "всё ок, апдейт применился". Поэтому это отдельный UPDATE ...
+                // WHERE version = $base_version RETURNING ...: fetch_optional
+                // вернёт None ровно тогда, когда ни одна строка не подошла под
+                // версию — однозначный сигнал конфликта.
+                let update_query = format!(
+                    r#"
+    UPDATE persons SET
+        name = $2, relation = $3, birth_date = $4, gender = $5, weight_kg = $6,
+        color_tag = $7, notes = $8, is_active = $9, photo_url = $10,
+        version = version + 1, updated_at = NOW()
+    WHERE id = $1 AND version = $11
+    RETURNING {PERSON_COLUMNS}
+"#
+                );
 
-        Ok(PersonUpsertOutcome::Ok(saved))
+                let updated = query_as::<_, Person>(&update_query)
+                    .bind(person.id)
+                    .bind(&person.name)
+                    .bind(person.relation)
+                    .bind(person.birth_date)
+                    .bind(person.gender)
+                    .bind(person.weight_kg)
+                    .bind(person.color_tag)
+                    .bind(&person.notes)
+                    .bind(person.is_active)
+                    .bind(&person.photo_url)
+                    .bind(person.base_version)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+
+                match updated {
+                    Some(saved) => {
+                        tx.commit().await?;
+                        Ok(PersonUpsertOutcome::Ok(saved))
+                    }
+                    None => {
+                        let current_query =
+                            format!("SELECT {PERSON_COLUMNS} FROM persons WHERE id = $1");
+                        let current = query_as::<_, Person>(&current_query)
+                            .bind(person.id)
+                            .fetch_one(&mut *tx)
+                            .await?;
+                        tx.rollback().await?;
+                        Ok(PersonUpsertOutcome::VersionConflict(current))
+                    }
+                }
+            }
+        }
     }
 
     async fn delete_person(&self, id: Uuid, user_account_id: Uuid) -> Result<bool, Error> {
@@ -521,6 +589,31 @@ mod tests {
         assert_eq!(
             clause,
             "id = $1 AND name = $2 AND email = $3 AND verification_token = $4"
+        );
+    }
+
+    #[test]
+    fn decide_upsert_route_inserts_when_no_existing_owner() {
+        assert_eq!(
+            decide_upsert_route(None, Uuid::new_v4()),
+            UpsertRoute::Insert
+        );
+    }
+
+    #[test]
+    fn decide_upsert_route_checks_version_when_owner_matches() {
+        let user = Uuid::new_v4();
+        assert_eq!(
+            decide_upsert_route(Some(user), user),
+            UpsertRoute::UpdateIfVersionMatches
+        );
+    }
+
+    #[test]
+    fn decide_upsert_route_rejects_a_different_owner() {
+        assert_eq!(
+            decide_upsert_route(Some(Uuid::new_v4()), Uuid::new_v4()),
+            UpsertRoute::OwnedByAnotherUser
         );
     }
 }

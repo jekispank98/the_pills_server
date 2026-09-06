@@ -1,25 +1,9 @@
-mod config;
-mod db;
-mod dtos;
-mod error;
-mod extractors;
-mod handlers;
-mod models;
-mod routes;
-mod state;
-mod utils;
-mod mail;
-
-use crate::routes::create_routes;
-use config::Config;
+use pills_server_test::config::Config;
+use pills_server_test::routes::create_routes;
+use pills_server_test::state::{AppState, SharedState};
 use sqlx::PgPool;
-use state::{AppState, SharedState};
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
-
-async fn root() -> &'static str {
-    "Hello World!"
-}
 
 #[tokio::main]
 async fn main() {

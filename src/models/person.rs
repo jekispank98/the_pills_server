@@ -62,6 +62,10 @@ pub struct Person {
     pub photo_url: Option<String>,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
+    /// Оптимистичная конкуренция (OCC) — клиент шлёт как `base_version` в
+    /// `UpsertPersonRequest`, апдейт применяется только если он совпадает с
+    /// текущим значением здесь (см. `PersonRepositoryTrait::upsert_person`).
+    pub version: i32,
 }
 
 #[cfg(test)]
