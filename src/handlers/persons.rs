@@ -5,11 +5,31 @@ use crate::extractors::CurrentUser;
 use crate::state::AppState;
 use axum::extract::Path;
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put, Router};
 use axum::{Extension, Json};
 use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
+
+/// `HttpError` не умеет нести произвольное тело (только `{status, message}`),
+/// а `VersionConflict` должен вернуть актуальную запись — поэтому у этого
+/// хендлера свой маленький тип ответа вместо `Json<PersonDto>` напрямую.
+pub(crate) enum UpsertPersonResponse {
+    Ok(PersonDto),
+    Conflict(PersonDto),
+}
+
+impl IntoResponse for UpsertPersonResponse {
+    fn into_response(self) -> Response {
+        match self {
+            UpsertPersonResponse::Ok(dto) => (StatusCode::OK, Json(dto)).into_response(),
+            UpsertPersonResponse::Conflict(dto) => {
+                (StatusCode::CONFLICT, Json(dto)).into_response()
+            }
+        }
+    }
+}
 
 pub fn persons_router() -> Router {
     Router::new()
@@ -52,7 +72,7 @@ pub async fn upsert_person(
     Extension(app_state): Extension<Arc<AppState>>,
     Path(person_id): Path<Uuid>,
     Json(body): Json<UpsertPersonRequest>,
-) -> Result<Json<PersonDto>, HttpError> {
+) -> Result<UpsertPersonResponse, HttpError> {
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
 
@@ -67,10 +87,18 @@ pub async fn upsert_person(
         notes: body.notes,
         is_active: body.is_active,
         photo_url: body.photo_url,
+        base_version: body.base_version,
     };
 
     match app_state.db_client.upsert_person(user_id, upsert).await? {
-        PersonUpsertOutcome::Ok(person) => Ok(Json(PersonDto::from(person))),
+        PersonUpsertOutcome::Ok(person) => Ok(UpsertPersonResponse::Ok(PersonDto::from(person))),
+        // Устаревшая base_version — клиент рассинхронизировался с сервером
+        // (например, тот же person уже был изменён на другом устройстве).
+        // Тело ответа несёт актуальную запись, чтобы клиент мог сделать
+        // rebase-and-retry-once.
+        PersonUpsertOutcome::VersionConflict(current) => {
+            Ok(UpsertPersonResponse::Conflict(PersonDto::from(current)))
+        }
         // Кто-то другой уже занял этот id (крайне маловероятное совпадение UUID,
         // но лучше явная 403, чем молча перезаписать/подсунуть чужую запись).
         PersonUpsertOutcome::OwnedByAnotherUser => Err(HttpError::new(

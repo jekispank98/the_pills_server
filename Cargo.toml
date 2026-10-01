@@ -3,6 +3,13 @@ name = "JekisBackend"
 version = "0.1.0"
 edition = "2024"
 
+# Явное имя lib-таргета — main.rs и integration-тесты в tests/ оба используют
+# этот крейт (`use pills_server_test::...`) вместо дублирования `mod` в каждом
+# бинарном/тестовом корне.
+[lib]
+name = "pills_server_test"
+path = "src/lib.rs"
+
 [dependencies]
 axum = "0.8"
 axum-extra = { version = "0.10", features = ["cookie"] }
