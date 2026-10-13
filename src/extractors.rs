@@ -1,13 +1,34 @@
 use crate::error::{ErrorMessage, HttpError};
 use crate::state::AppState;
 use crate::utils::token;
-use axum::extract::FromRequestParts;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{FromRequest, FromRequestParts, Request};
 use axum::http::header;
 use axum::http::request::Parts;
 use axum::http::HeaderMap;
 use axum_extra::extract::cookie::CookieJar;
+use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use uuid::Uuid;
+
+/// `axum::Json<T>` отдаёт свою ошибку парсинга голым текстом, а не нашим
+/// `{status, message}` — эта обёртка конвертирует её в `HttpError`.
+pub struct JsonBody<T>(pub T);
+
+impl<T, S> FromRequest<S> for JsonBody<T>
+where
+    T: DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = HttpError;
+
+    async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let axum::Json(value) = axum::Json::<T>::from_request(req, state)
+            .await
+            .map_err(|rejection: JsonRejection| HttpError::new(rejection.body_text(), rejection.status()))?;
+        Ok(JsonBody(value))
+    }
+}
 
 /// Id текущего пользователя, извлечённый и проверенный из сессионного JWT.
 ///

@@ -1,7 +1,7 @@
 use crate::db::{AuthentificationTrait, UserProfileUpdate};
 use crate::dtos::{UpdateUserRequest, UserDto};
 use crate::error::{ErrorMessage, HttpError};
-use crate::extractors::CurrentUser;
+use crate::extractors::{CurrentUser, JsonBody};
 use crate::state::AppState;
 use axum::http::StatusCode;
 use axum::routing::{get, Router};
@@ -29,7 +29,7 @@ pub async fn get_me(
 pub async fn update_me(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
-    Json(body): Json<UpdateUserRequest>,
+    JsonBody(body): JsonBody<UpdateUserRequest>,
 ) -> Result<Json<UserDto>, HttpError> {
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
