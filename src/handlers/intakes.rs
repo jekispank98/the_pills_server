@@ -135,7 +135,7 @@ pub async fn set_intake_status(
     Extension(app_state): Extension<Arc<AppState>>,
     Path(intake_id): Path<Uuid>,
     JsonBody(body): JsonBody<IntakeStatusRequest>,
-) -> Result<StatusCode, HttpError> {
+) -> Result<Json<IntakeDto>, HttpError> {
     let status = match body {
         IntakeStatusRequest::Passed => IntakeStatus::Passed,
         IntakeStatusRequest::Canceled => IntakeStatus::Canceled,
@@ -143,14 +143,11 @@ pub async fn set_intake_status(
         IntakeStatusRequest::Uncompleted => IntakeStatus::Uncompleted,
     };
 
-    let updated = app_state
+    let (intake, person_ids) = app_state
         .db_client
         .set_intake_status(intake_id, user_id, status)
-        .await?;
+        .await?
+        .ok_or_else(|| HttpError::new("Intake not found", StatusCode::NOT_FOUND))?;
 
-    if !updated {
-        return Err(HttpError::new("Intake not found", StatusCode::NOT_FOUND));
-    }
-
-    Ok(StatusCode::NO_CONTENT)
+    Ok(Json(IntakeDto::from_intake(intake, person_ids)))
 }

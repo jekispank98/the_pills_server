@@ -338,7 +338,7 @@ pub trait IntakeRepositoryTrait {
         id: Uuid,
         user_account_id: Uuid,
         status: IntakeStatus,
-    ) -> Result<bool, Error>;
+    ) -> Result<Option<(Intake, Vec<Uuid>)>, Error>;
 }
 
 #[async_trait::async_trait]
@@ -1053,7 +1053,7 @@ impl IntakeRepositoryTrait for DbClient {
         id: Uuid,
         user_account_id: Uuid,
         status: IntakeStatus,
-    ) -> Result<bool, Error> {
+    ) -> Result<Option<(Intake, Vec<Uuid>)>, Error> {
         let (is_completed, is_passed, is_canceled) = intake_status_flags(status);
 
         // Тот же динамический SET-билдер, что build_filter_query выше строит
@@ -1074,20 +1074,25 @@ impl IntakeRepositoryTrait for DbClient {
         sets.push("updated_at = NOW()".to_string());
 
         let query = format!(
-            "UPDATE intakes SET {} WHERE id = ${} AND user_account_id = ${}",
+            "UPDATE intakes SET {} WHERE id = ${} AND user_account_id = ${} RETURNING {INTAKE_COLUMNS}",
             sets.join(", "),
             binds.len() + 1,
             binds.len() + 2
         );
 
-        let mut db_query = sqlx::query(&query);
+        let mut db_query = query_as::<_, Intake>(&query);
         for bind in binds {
             db_query = db_query.bind(bind);
         }
         db_query = db_query.bind(id).bind(user_account_id);
 
-        let result = db_query.execute(&self.pool).await?;
-        Ok(result.rows_affected() > 0)
+        match db_query.fetch_optional(&self.pool).await? {
+            Some(intake) => {
+                let person_ids = self.get_person_ids_for_intake(intake.id).await?;
+                Ok(Some((intake, person_ids)))
+            }
+            None => Ok(None),
+        }
     }
 }
 
