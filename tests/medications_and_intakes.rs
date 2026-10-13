@@ -515,11 +515,13 @@ async fn set_intake_status_passed_does_not_touch_completed_or_canceled() {
     initial.is_completed = true;
     client.upsert_intake_with_persons(user_id, initial).await.unwrap();
 
-    let updated = client
+    let (updated, _) = client
         .set_intake_status(intake_id, user_id, IntakeStatus::Passed)
         .await
+        .unwrap()
         .unwrap();
-    assert!(updated);
+    assert!(updated.is_passed);
+    assert_eq!(updated.version, 1);
 
     let (intake, _) = client.get_intake(intake_id).await.unwrap().unwrap();
     assert!(intake.is_passed);
@@ -554,4 +556,68 @@ async fn set_intake_status_uncompleted_clears_all_three_flags() {
     assert!(!intake.is_completed);
     assert!(!intake.is_passed);
     assert!(!intake.is_canceled);
+}
+
+#[tokio::test]
+async fn set_intake_status_returns_the_updated_intake_with_its_persons() {
+    let pool = test_pool().await;
+    let client = pills_server_test::db::DbClient::new(pool.clone());
+    let user_id = create_test_user(&pool).await;
+    let medication_id = Uuid::new_v4();
+    let intake_id = Uuid::new_v4();
+
+    client
+        .upsert_medication(user_id, medication_upsert(medication_id, "Aspirin", 0))
+        .await
+        .unwrap();
+    client
+        .upsert_intake_with_persons(user_id, intake_upsert(intake_id, medication_id, vec![], 0))
+        .await
+        .unwrap();
+
+    let (first, person_ids) = client
+        .set_intake_status(intake_id, user_id, IntakeStatus::Completed)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(first.id, intake_id);
+    assert!(first.is_completed);
+    assert_eq!(first.version, 1);
+    assert!(person_ids.is_empty());
+
+    let (second, _) = client
+        .set_intake_status(intake_id, user_id, IntakeStatus::Uncompleted)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(second.version, 2);
+}
+
+#[tokio::test]
+async fn set_intake_status_returns_none_for_another_users_intake() {
+    let pool = test_pool().await;
+    let client = pills_server_test::db::DbClient::new(pool.clone());
+    let owner_id = create_test_user(&pool).await;
+    let stranger_id = create_test_user(&pool).await;
+    let medication_id = Uuid::new_v4();
+    let intake_id = Uuid::new_v4();
+
+    client
+        .upsert_medication(owner_id, medication_upsert(medication_id, "Aspirin", 0))
+        .await
+        .unwrap();
+    client
+        .upsert_intake_with_persons(owner_id, intake_upsert(intake_id, medication_id, vec![], 0))
+        .await
+        .unwrap();
+
+    let result = client
+        .set_intake_status(intake_id, stranger_id, IntakeStatus::Completed)
+        .await
+        .unwrap();
+    assert!(result.is_none());
+
+    let (intake, _) = client.get_intake(intake_id).await.unwrap().unwrap();
+    assert!(!intake.is_completed);
+    assert_eq!(intake.version, 0);
 }
