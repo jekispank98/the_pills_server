@@ -1,3 +1,5 @@
+use crate::models::intake::Intake;
+use crate::models::medication::{Medication, MedicationForm};
 use crate::models::person::{Gender, Person, PersonRelation};
 use crate::models::user::User;
 use chrono::NaiveDateTime;
@@ -179,6 +181,136 @@ fn default_true() -> bool {
     true
 }
 
+#[derive(Debug, Serialize)]
+pub struct MedicationDto {
+    pub id: Uuid,
+    pub user_account_id: Uuid,
+    pub name: String,
+    pub dosage: f64,
+    pub form: MedicationForm,
+    pub instruction: String,
+    pub color_tag: String,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub version: i32,
+}
+
+impl From<Medication> for MedicationDto {
+    fn from(medication: Medication) -> Self {
+        MedicationDto {
+            id: medication.id,
+            user_account_id: medication.user_account_id,
+            name: medication.name,
+            dosage: medication.dosage,
+            form: medication.form,
+            instruction: medication.instruction,
+            color_tag: medication.color_tag,
+            created_at: medication.created_at,
+            updated_at: medication.updated_at,
+            version: medication.version,
+        }
+    }
+}
+
+/// `PUT /medications/{id}` — идемпотентный upsert по client-generated `id`,
+/// тот же паттерн, что `UpsertPersonRequest`.
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpsertMedicationRequest {
+    #[validate(required(message = "Name is required"))]
+    #[validate(length(min = 1, max = 200, message = "Name must be 1-200 characters"))]
+    pub name: Option<String>,
+    #[validate(required(message = "Dosage is required"))]
+    pub dosage: Option<f64>,
+    pub form: MedicationForm,
+    #[serde(default)]
+    pub instruction: String,
+    #[validate(required(message = "Color tag is required"))]
+    pub color_tag: Option<String>,
+    /// Последняя версия, известная клиенту (0 для нового лекарства). См.
+    /// `UpsertPersonRequest::base_version`.
+    #[serde(default)]
+    pub base_version: i32,
+}
+
+/// `PUT /medications/{id}/persons`. Линковка аддитивная (как Android
+/// `linkPersonsToMedication`/`OnConflictStrategy.IGNORE`) — этот запрос никого
+/// не отвязывает, только добавляет.
+#[derive(Debug, Deserialize, Validate)]
+pub struct LinkPersonsRequest {
+    #[validate(length(min = 1, message = "At least one person id is required"))]
+    pub person_ids: Vec<Uuid>,
+}
+
+/// В отличие от `MedicationDto`, несёт `person_ids` — Android `Intake.person`
+/// хранит полные объекты, на бэкенде это join через `intake_person_cross_ref`,
+/// поэтому не `From<Intake>`, а отдельный конструктор с уже собранным списком.
+#[derive(Debug, Serialize)]
+pub struct IntakeDto {
+    pub id: Uuid,
+    pub medication_id: Uuid,
+    pub time: NaiveDateTime,
+    pub pre_time: Option<NaiveDateTime>,
+    pub person_ids: Vec<Uuid>,
+    pub is_completed: bool,
+    pub is_passed: bool,
+    pub is_canceled: bool,
+    pub created_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
+    pub version: i32,
+}
+
+impl IntakeDto {
+    pub fn from_intake(intake: Intake, person_ids: Vec<Uuid>) -> Self {
+        IntakeDto {
+            id: intake.id,
+            medication_id: intake.medication_id,
+            time: intake.time,
+            pre_time: intake.pre_time,
+            person_ids,
+            is_completed: intake.is_completed,
+            is_passed: intake.is_passed,
+            is_canceled: intake.is_canceled,
+            created_at: intake.created_at,
+            updated_at: intake.updated_at,
+            version: intake.version,
+        }
+    }
+}
+
+/// `PUT /intakes/{id}` — upsert приёма вместе с привязанными persons. В
+/// отличие от `LinkPersonsRequest` у медикамента, здесь `person_ids` —
+/// full replace при каждом апдейте (зеркалит Android
+/// `IntakeDao.upsertIntakeWithPersons`: delete+reinsert cross-ref'ов).
+#[derive(Debug, Deserialize, Validate)]
+pub struct UpsertIntakeRequest {
+    #[validate(required(message = "Medication id is required"))]
+    pub medication_id: Option<Uuid>,
+    #[validate(required(message = "Time is required"))]
+    pub time: Option<NaiveDateTime>,
+    pub pre_time: Option<NaiveDateTime>,
+    #[validate(length(min = 1, message = "At least one person id is required"))]
+    pub person_ids: Vec<Uuid>,
+    #[serde(default)]
+    pub is_completed: bool,
+    #[serde(default)]
+    pub is_passed: bool,
+    #[serde(default)]
+    pub is_canceled: bool,
+    #[serde(default)]
+    pub base_version: i32,
+}
+
+/// `PATCH /intakes/{id}/status`. Зеркалит четыре DAO-метода Android
+/// `IntakeDao` один в один — см. `IntakeStatus` в models/intake.rs.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum IntakeStatusRequest {
+    Passed,
+    Canceled,
+    Completed,
+    Uncompleted,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +368,59 @@ mod tests {
         assert!(!json.contains("argon2id"));
         assert!(!json.contains("secret-token"));
         assert!(!json.contains("password"));
+    }
+
+    #[test]
+    fn upsert_medication_request_defaults_match_the_domain_model_defaults() {
+        let request: UpsertMedicationRequest = serde_json::from_str(
+            r##"{"name":"Aspirin","dosage":100.0,"form":"pellets","color_tag":"#6A94E8"}"##,
+        )
+        .unwrap();
+
+        assert_eq!(request.instruction, "");
+        assert_eq!(request.base_version, 0);
+        assert_eq!(request.name.as_deref(), Some("Aspirin"));
+    }
+
+    #[test]
+    fn upsert_medication_request_rejects_missing_name() {
+        let request: UpsertMedicationRequest =
+            serde_json::from_str(r##"{"dosage":1.0,"form":"pellets","color_tag":"#000"}"##)
+                .unwrap();
+        assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn medication_form_rejects_unknown_values() {
+        let result: Result<UpsertMedicationRequest, _> = serde_json::from_str(
+            r##"{"name":"X","dosage":1.0,"form":"syrup","color_tag":"#000"}"##,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn upsert_intake_request_rejects_an_empty_person_list() {
+        let request: UpsertIntakeRequest = serde_json::from_str(&format!(
+            r#"{{"medication_id":"{}","time":"2026-01-01T00:00:00","person_ids":[]}}"#,
+            Uuid::nil()
+        ))
+        .unwrap();
+        assert!(request.validate().is_err());
+    }
+
+    #[test]
+    fn intake_status_request_matches_the_four_android_dao_transitions() {
+        for (json, expected) in [
+            ("\"PASSED\"", IntakeStatusRequest::Passed),
+            ("\"CANCELED\"", IntakeStatusRequest::Canceled),
+            ("\"COMPLETED\"", IntakeStatusRequest::Completed),
+            ("\"UNCOMPLETED\"", IntakeStatusRequest::Uncompleted),
+        ] {
+            let parsed: IntakeStatusRequest = serde_json::from_str(json).unwrap();
+            assert_eq!(
+                std::mem::discriminant(&parsed),
+                std::mem::discriminant(&expected)
+            );
+        }
     }
 }

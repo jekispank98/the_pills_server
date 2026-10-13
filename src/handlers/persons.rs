@@ -1,7 +1,8 @@
 use crate::db::{PersonRepositoryTrait, PersonUpsert, PersonUpsertOutcome};
 use crate::dtos::{PersonDto, UpsertPersonRequest};
 use crate::error::HttpError;
-use crate::extractors::CurrentUser;
+use crate::extractors::{CurrentUser, JsonBody};
+use crate::handlers::medications::get_medications_for_person;
 use crate::state::AppState;
 use axum::extract::Path;
 use axum::http::StatusCode;
@@ -38,6 +39,10 @@ pub fn persons_router() -> Router {
             "/{id}",
             get(get_person_by_id).put(upsert_person).delete(delete_person),
         )
+        // Обратное направление (человек -> лекарства, которые он принимает) —
+        // живёт в handlers/medications.rs, т.к. читает из того же
+        // MedicationRepositoryTrait, что и остальные medication-ручки.
+        .route("/{id}/medications", get(get_medications_for_person))
 }
 
 pub async fn list_persons(
@@ -71,7 +76,7 @@ pub async fn upsert_person(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
     Path(person_id): Path<Uuid>,
-    Json(body): Json<UpsertPersonRequest>,
+    JsonBody(body): JsonBody<UpsertPersonRequest>,
 ) -> Result<UpsertPersonResponse, HttpError> {
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
