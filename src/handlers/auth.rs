@@ -3,6 +3,7 @@ use crate::dtos::{
     GoogleLoginDto, LoginResponseDto, LoginUserDto, RegisterUserDto, Response, VerifyEmailQueryDto,
 };
 use crate::error::ErrorMessage;
+use crate::extractors::JsonBody;
 use crate::mail::mails::{send_verification_email, send_welcome_email};
 use crate::state::AppState;
 use crate::utils::{password, token};
@@ -38,7 +39,7 @@ pub fn auth_router() -> Router {
 
 pub async fn register(
     Extension(app_state): Extension<Arc<AppState>>,
-    Json(body): Json<RegisterUserDto>,
+    JsonBody(body): JsonBody<RegisterUserDto>,
 ) -> Result<impl IntoResponse, HttpError> {
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
@@ -78,7 +79,7 @@ pub async fn register(
 
 pub async fn login(
     Extension(app_state): Extension<Arc<AppState>>,
-    Json(body): Json<LoginUserDto>,
+    JsonBody(body): JsonBody<LoginUserDto>,
 ) -> Result<impl IntoResponse, HttpError> {
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
@@ -133,7 +134,7 @@ pub async fn login(
 
 pub async fn google_login(
     Extension(app_state): Extension<Arc<AppState>>,
-    Json(body): Json<GoogleLoginDto>,
+    JsonBody(body): JsonBody<GoogleLoginDto>,
 ) -> Result<StatusCode, HttpError> {
     body.validate()
         .map_err(|e| HttpError::bad_request(e.to_string()))?;
