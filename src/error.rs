@@ -49,8 +49,6 @@ impl Display for ErrorMessage {
 }
 
 impl ErrorMessage {
-    /// Возвращает `&'static str`: сообщения статичны, кроме одного параметризованного,
-    /// поэтому прежняя аллокация `String` на каждом вызове была лишней.
     pub fn as_str(&self) -> &'static str {
         match self {
             ErrorMessage::ServerError => "Server Error. Please try again later",
@@ -171,10 +169,6 @@ impl From<ErrorMessage> for HttpError {
     }
 }
 
-/// Единая конверсия ошибок БД. Раньше на каждом вызове стоял ручной
-/// `.map_err(|e| HttpError::server_error(e.to_string()))`, который отдавал клиенту
-/// внутренние детали Postgres. Теперь наружу уходит generic-сообщение,
-/// а подробности попадают в лог.
 impl From<sqlx::Error> for HttpError {
     fn from(error: sqlx::Error) -> Self {
         if let Some(db_error) = error.as_database_error() {

@@ -45,8 +45,6 @@ const USER_SELECT_QUERY: &str = r#"
     FROM users
 "#;
 
-// Общий список колонок `persons` — переиспользуется и в SELECT, и в RETURNING
-// у INSERT/UPDATE, чтобы не дублировать (и не рассинхронизировать) список полей.
 const PERSON_COLUMNS: &str = "id, user_account_id, name, relation, is_user, birth_date, gender, \
     weight_kg, color_tag, notes, is_active, photo_url, created_at, updated_at, version";
 
@@ -90,8 +88,6 @@ fn build_filter_query<'a>(filters: &UserQueryFilters<'a>) -> Option<(String, Vec
     Some((conditions.join(" AND "), binds))
 }
 
-/// Поля профиля, которые можно поменять через `PATCH /users/me`.
-/// `None` — «не трогать это поле» (частичное обновление), а не «очистить».
 #[derive(Debug, Clone, Default)]
 pub struct UserProfileUpdate {
     pub name: Option<String>,
@@ -100,9 +96,6 @@ pub struct UserProfileUpdate {
     pub locale: Option<String>,
 }
 
-/// Поля, которые клиент присылает при создании/обновлении `Person`.
-/// `is_user` туда намеренно не входит — SELF-профиль создаётся только при
-/// регистрации (см. `register_user_with_self_person`), апсерт его не трогает.
 #[derive(Debug, Clone)]
 pub struct PersonUpsert {
     pub id: Uuid,
@@ -115,8 +108,6 @@ pub struct PersonUpsert {
     pub notes: Option<String>,
     pub is_active: bool,
     pub photo_url: Option<String>,
-    /// Последняя версия, известная клиенту — 0 для новой персоны. См.
-    /// `PersonRepositoryTrait::upsert_person`/`decide_upsert_route`.
     pub base_version: i32,
 }
 
@@ -130,10 +121,6 @@ pub trait AuthentificationTrait {
         token: Option<&str>,
     ) -> Result<Option<User>, Error>;
 
-    /// Создаёт пользователя и его SELF-профиль (`Person`) одной транзакцией —
-    /// либо оба ряда появляются, либо ни одного. Раньше персона не создавалась
-    /// вовсе (таблицы не было); теперь бэкенд ведёт себя как Android
-    /// `UserRepositoryImpl.signUp`, который тоже создаёт SELF-персону при регистрации.
     async fn register_user_with_self_person(
         &self,
         name: String,
@@ -149,9 +136,6 @@ pub trait AuthentificationTrait {
 
     async fn delete_user_by_email(&self, email: &str) -> Result<bool, Error>;
 
-    /// Продлевает срок жизни токена подтверждения email (например, при повторной
-    /// отправке письма). К сессионной аутентификации отношения не имеет —
-    /// сессия живёт только в JWT.
     async fn update_verification_token_expires_at(
         &self,
         expires_at: NaiveDateTime,
@@ -172,20 +156,12 @@ pub trait AuthentificationTrait {
     async fn verified_token(&self, token: &str) -> Result<(), Error>;
 }
 
-/// Итог апсерта: успешно, чужой `id` (конфликт владения), либо устаревшая
-/// `base_version` (конфликт версии — `VersionConflict` несёт актуальную запись,
-/// чтобы клиент мог сделать rebase-and-retry-once).
 pub enum PersonUpsertOutcome {
     Ok(Person),
     OwnedByAnotherUser,
     VersionConflict(Person),
 }
 
-/// Куда должен пойти upsert по итогам ownership pre-check — единственная часть
-/// решения, которая не требует атомарности с самой записью в БД (в отличие от
-/// version-guard, который обязан быть частью одного UPDATE ... WHERE, иначе
-/// теряется гарантия атомарности), поэтому вынесена в чистую функцию и
-/// unit-тестируется без БД.
 #[derive(Debug, PartialEq, Eq)]
 enum UpsertRoute {
     Insert,
@@ -201,7 +177,6 @@ fn decide_upsert_route(existing_owner: Option<Uuid>, requesting_user: Uuid) -> U
     }
 }
 
-/// Поля, которые клиент присылает при создании/обновлении `Medication`.
 #[derive(Debug, Clone)]
 pub struct MedicationUpsert {
     pub id: Uuid,
@@ -213,26 +188,18 @@ pub struct MedicationUpsert {
     pub base_version: i32,
 }
 
-/// Тот же трёхвариантный итог, что `PersonUpsertOutcome` — тот же
-/// `decide_upsert_route`/OCC-паттерн, другая таблица.
 pub enum MedicationUpsertOutcome {
     Ok(Medication),
     OwnedByAnotherUser,
     VersionConflict(Medication),
 }
 
-/// Итог привязки persons к лекарству — отдельные варианты для "чужое
-/// лекарство" и "один из person_ids не ваш", чтобы хендлер мог вернуть точный
-/// статус вместо общего 403.
 pub enum LinkPersonsOutcome {
     Ok,
     MedicationNotOwned,
     SomePersonsNotOwned,
 }
 
-/// Поля, которые клиент присылает при создании/обновлении `Intake`, включая
-/// полный список привязанных persons (full-replace при апдейте — см.
-/// `IntakeRepositoryTrait::upsert_intake_with_persons`).
 #[derive(Debug, Clone)]
 pub struct IntakeUpsert {
     pub id: Uuid,
@@ -246,11 +213,6 @@ pub struct IntakeUpsert {
     pub base_version: i32,
 }
 
-/// Расширяет `MedicationUpsertOutcome`-паттерн двумя дополнительными
-/// отказами, специфичными для Intake: ссылка на чужое/несуществующее
-/// лекарство и попытка привязать не принадлежащего вам person. `Ok`/
-/// `VersionConflict` несут уже актуальный список `person_ids` вместе со
-/// строкой, чтобы хендлеру не нужен был отдельный запрос за ним.
 pub enum IntakeUpsertOutcome {
     Ok(Intake, Vec<Uuid>),
     OwnedByAnotherUser,
@@ -259,16 +221,7 @@ pub enum IntakeUpsertOutcome {
     SomePersonsNotOwned,
 }
 
-/// Чистая функция — какие флаги трогает каждый переход статуса (`None` —
-/// «не менять»). Зеркалит четыре DAO-метода Android `IntakeDao`
-/// (markAsPassed/markAsCanceled/markAsCompleted/markAsUncompleted) один в
-/// один, включая их асимметрию: `Passed` трогает только `is_passed`, три
-/// остальных явно переустанавливают все три флага. Вынесена отдельно по
-/// той же причине, что `decide_upsert_route` — тестируется без БД, а
-/// `set_intake_status` строит по ней SQL тем же приёмом, что
-/// `build_filter_query` выше.
 fn intake_status_flags(status: IntakeStatus) -> (Option<bool>, Option<bool>, Option<bool>) {
-    // (is_completed, is_passed, is_canceled)
     match status {
         IntakeStatus::Passed => (None, Some(true), None),
         IntakeStatus::Canceled => (Some(false), Some(true), Some(true)),
@@ -283,20 +236,14 @@ pub trait MedicationRepositoryTrait {
 
     async fn get_medication(&self, id: Uuid) -> Result<Option<Medication>, Error>;
 
-    /// Идемпотентный upsert по client-generated `id`, тот же паттерн, что
-    /// `PersonRepositoryTrait::upsert_person`.
     async fn upsert_medication(
         &self,
         user_account_id: Uuid,
         medication: MedicationUpsert,
     ) -> Result<MedicationUpsertOutcome, Error>;
 
-    /// `ON DELETE CASCADE` на `medication_person_cross_ref`/`intakes` сам
-    /// подчищает связанные записи — отдельная очистка не нужна.
     async fn delete_medication(&self, id: Uuid, user_account_id: Uuid) -> Result<bool, Error>;
 
-    /// Аддитивная линковка (как Android `linkPersonsToMedication` —
-    /// `OnConflictStrategy.IGNORE`): никогда не отвязывает, только добавляет.
     async fn link_persons_to_medication(
         &self,
         medication_id: Uuid,
@@ -304,11 +251,8 @@ pub trait MedicationRepositoryTrait {
         person_ids: &[Uuid],
     ) -> Result<LinkPersonsOutcome, Error>;
 
-    /// Параллель Android `getPersonsByMedicationId` (медикамент -> люди).
     async fn get_persons_for_medication(&self, medication_id: Uuid) -> Result<Vec<Person>, Error>;
 
-    /// Обратное направление (человек -> медикаменты) — на Android такой
-    /// ручки пока нет вообще, заводим с нуля.
     async fn get_medications_for_person(
         &self,
         person_id: Uuid,
@@ -322,8 +266,6 @@ pub trait IntakeRepositoryTrait {
 
     async fn get_intake(&self, id: Uuid) -> Result<Option<(Intake, Vec<Uuid>)>, Error>;
 
-    /// Апдейт сразу и строки, и привязанных persons (full-replace) — одна
-    /// транзакция, зеркалит Android `IntakeDao.upsertIntakeWithPersons`.
     async fn upsert_intake_with_persons(
         &self,
         user_account_id: Uuid,
@@ -332,8 +274,6 @@ pub trait IntakeRepositoryTrait {
 
     async fn delete_intake(&self, id: Uuid, user_account_id: Uuid) -> Result<bool, Error>;
 
-    /// Точечный переход статуса без апдейта остальных полей — параллель
-    /// четырём `markAs*` методам Android `IntakeDao`.
     async fn set_intake_status(
         &self,
         id: Uuid,
@@ -348,18 +288,12 @@ pub trait PersonRepositoryTrait {
 
     async fn get_person(&self, id: Uuid) -> Result<Option<Person>, Error>;
 
-    /// Идемпотентный upsert по client-generated `id`. Если строка с таким `id`
-    /// уже существует и принадлежит другому аккаунту — не перезаписывает её.
     async fn upsert_person(
         &self,
         user_account_id: Uuid,
         person: PersonUpsert,
     ) -> Result<PersonUpsertOutcome, Error>;
 
-    /// Удаляет только если персона принадлежит `user_account_id` и не является
-    /// SELF-профилем (`is_user = false`) — тот же запрет, что уже есть в
-    /// Android `ProfileViewModel` (нельзя удалить самого себя), продублирован
-    /// на сервере, а не только на клиенте.
     async fn delete_person(&self, id: Uuid, user_account_id: Uuid) -> Result<bool, Error>;
 }
 
@@ -472,9 +406,6 @@ impl AuthentificationTrait for DbClient {
         id: Uuid,
         update: UserProfileUpdate,
     ) -> Result<Option<User>, Error> {
-        // COALESCE($n, column) — присланное значение перезаписывает, а
-        // отсутствующее (NULL-бинд) оставляет колонку как есть: PATCH
-        // семантика "не трогай, если не прислано", а не "обнули".
         let query = r#"
             UPDATE users
             SET
@@ -579,8 +510,6 @@ impl PersonRepositoryTrait for DbClient {
                 Ok(PersonUpsertOutcome::OwnedByAnotherUser)
             }
             UpsertRoute::Insert => {
-                // Новая строка — version стартует с DEFAULT 0 колонки, base_version
-                // клиента здесь не участвует (это не апдейт, конфликтовать не с чем).
                 let query = format!(
                     r#"
     INSERT INTO persons(id, user_account_id, name, relation, is_user, birth_date, gender,
@@ -609,13 +538,6 @@ impl PersonRepositoryTrait for DbClient {
                 Ok(PersonUpsertOutcome::Ok(saved))
             }
             UpsertRoute::UpdateIfVersionMatches => {
-                // Не INSERT ... ON CONFLICT ... WHERE: если WHERE исключает строку,
-                // Postgres всё равно считает conflict-target удовлетворённым и молча
-                // не делает апдейт — нет способа отличить "версия не совпала" от
-                // "всё ок, апдейт применился". Поэтому это отдельный UPDATE ...
-                // WHERE version = $base_version RETURNING ...: fetch_optional
-                // вернёт None ровно тогда, когда ни одна строка не подошла под
-                // версию — однозначный сигнал конфликта.
                 let update_query = format!(
                     r#"
     UPDATE persons SET
@@ -761,10 +683,6 @@ impl MedicationRepositoryTrait for DbClient {
                 Ok(MedicationUpsertOutcome::Ok(saved))
             }
             UpsertRoute::UpdateIfVersionMatches => {
-                // Тот же приём, что у Person: отдельный UPDATE ... WHERE
-                // version = $base_version RETURNING ..., а не
-                // INSERT ... ON CONFLICT ... WHERE (см. комментарий в
-                // upsert_person выше — тот же аргумент применим здесь).
                 let update_query = format!(
                     r#"
     UPDATE medications SET
@@ -878,8 +796,6 @@ impl MedicationRepositoryTrait for DbClient {
         person_id: Uuid,
         user_account_id: Uuid,
     ) -> Result<Vec<Medication>, Error> {
-        // Фильтр по user_account_id — дополнительная защита от утечки между
-        // аккаунтами сверх проверки на уровне хендлера (что person_id — ваш).
         let query = "SELECT m.* FROM medications m \
                      INNER JOIN medication_person_cross_ref x ON x.medication_id = m.id \
                      WHERE x.person_id = $1 AND m.user_account_id = $2 ORDER BY m.name";
@@ -935,8 +851,6 @@ impl IntakeRepositoryTrait for DbClient {
     ) -> Result<IntakeUpsertOutcome, Error> {
         let mut tx = self.pool.begin().await?;
 
-        // Лекарство должно существовать и принадлежать тому же аккаунту —
-        // иначе можно было бы привязать intake к чужому medication_id.
         let medication_owner: Option<Uuid> =
             sqlx::query_scalar("SELECT user_account_id FROM medications WHERE id = $1")
                 .bind(intake.medication_id)
@@ -1041,8 +955,6 @@ impl IntakeRepositoryTrait for DbClient {
             }
         };
 
-        // Full replace — в отличие от аддитивной medication-линковки выше,
-        // зеркалит Android IntakeDao.upsertIntakeWithPersons (delete+reinsert).
         sqlx::query("DELETE FROM intake_person_cross_ref WHERE intake_id = $1")
             .bind(saved.id)
             .execute(&mut *tx)
@@ -1079,8 +991,6 @@ impl IntakeRepositoryTrait for DbClient {
     ) -> Result<Option<(Intake, Vec<Uuid>)>, Error> {
         let (is_completed, is_passed, is_canceled) = intake_status_flags(status);
 
-        // Тот же динамический SET-билдер, что build_filter_query выше строит
-        // WHERE — только для полей, которые этот переход статуса реально трогает.
         let mut sets = Vec::new();
         let mut binds: Vec<bool> = Vec::new();
         for (column, value) in [
@@ -1276,9 +1186,6 @@ mod tests {
 
     #[test]
     fn user_id_is_bound_as_uuid_not_text() {
-        // Раньше `user_id: Option<Uuid>` биндился через `.to_string()` в текстовый
-        // параметр против INTEGER-колонки `id` — запрос падал бы в рантайме. Теперь
-        // `id` сама стала UUID, так что биндим typed `Uuid` напрямую.
         let id = Uuid::new_v4();
         let filters = UserQueryFilters {
             user_id: Some(id),
@@ -1291,9 +1198,6 @@ mod tests {
 
     #[test]
     fn multiple_filters_are_combined_with_and_not_or() {
-        // Регрессия на баг: get_user(Some(id), None, None, Some(token)) раньше
-        // строил "id = $1 OR verification_token = $2" и мог вернуть чужого
-        // пользователя, у которого совпал только один из фильтров.
         let id = Uuid::new_v4();
         let filters = UserQueryFilters {
             user_id: Some(id),

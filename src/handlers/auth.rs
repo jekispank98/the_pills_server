@@ -27,10 +27,6 @@ use crate::models::google_auth::{GoogleJwks, GoogleTokenPayload};
 
 pub fn auth_router() -> Router {
     Router::new()
-        // POST, не GET: оба принимают JSON-тело, а не query-параметры.
-        // GET с телом — валидный HTTP, но многие клиенты (в частности,
-        // Ktor + OkHttp-движок на Android) сами отказываются его отправлять
-        // (`method GET must not have a request body`).
         .route("/login", post(login))
         .route("/google_login", post(google_login))
         .route("/register", post(register))
@@ -136,11 +132,6 @@ pub async fn register(
     let token = generate_token();
     let token_expires_at = calculate_expiration();
 
-    // `register_user_with_self_person` возвращает sqlx::Error, который
-    // конвертируется в HttpError через `From<sqlx::Error>` (см. error.rs) — там
-    // уже учтён unique_violation → 409 EmailExist, и наружу не утекают детали
-    // Postgres. User и его SELF-`Person` создаются одной транзакцией — как в
-    // Android `UserRepositoryImpl.signUp`.
     let (user, _self_person) = app_state
         .db_client
         .register_user_with_self_person(name, email, password_hash, token_expires_at, token.clone())
@@ -179,16 +170,12 @@ pub async fn login(
     let user = match user {
         Some(user) => user,
         None => {
-            // Прогоняем фиктивную проверку, чтобы «пользователь не найден» и
-            // «пароль неверный» занимали одинаковое время и не позволяли
-            // перебором email узнавать, какие аккаунты существуют.
             password::verify_dummy_password(password).await;
             return Err(HttpError::from(ErrorMessage::WrongCredentials));
         }
     };
 
     let Some(password_hash) = user.password.clone() else {
-        // Аккаунт создан через Google — пароля нет вовсе.
         return Err(HttpError::from(ErrorMessage::PasswordLoginUnavailable));
     };
 
@@ -243,9 +230,6 @@ pub async fn google_login(
         "google token verified, but account provisioning is not implemented yet"
     );
 
-    // Поиск/создание пользователя по `google_sub` и выпуск сессии — следующий шаг;
-    // намеренно не притворяемся, что вход уже работает (раньше хендлер возвращал
-    // `Ok(())`, то есть 200 с пустым телом, ничего на самом деле не сделав).
     Err(HttpError::new(
         "Google sign-in verification succeeded, but account provisioning is not implemented yet",
         StatusCode::NOT_IMPLEMENTED,
@@ -303,9 +287,6 @@ pub async fn verify_email(
     Ok((headers, Html(html_content)))
 }
 
-/// Строит `Set-Cookie` для сессионного JWT. `Secure` берётся из `Config::cookie_secure`
-/// (production-режим) — раньше `Config` уже умел это вычислять, но ни один
-/// хендлер не читал это поле, и cookie никогда не помечалась `Secure`.
 fn session_cookie_headers(app_state: &AppState, token: &str) -> HeaderMap {
     let cookie_duration = time::Duration::seconds(app_state.config.jwt_max_age.as_secs() as i64);
     let cookie = Cookie::build(("token", token.to_string()))
@@ -325,11 +306,9 @@ pub async fn verify_google_token(
     web_client_id: &str,
     cache: &Cache<String, String>,
 ) -> Result<GoogleTokenPayload, ErrorMessage> {
-    // 1. Декодируем заголовок, чтобы получить kid (Key ID)
     let header = decode_header(token).map_err(|_| ErrorMessage::GoogleTokenRejected)?;
     let kid = header.kid.ok_or(ErrorMessage::GoogleTokenRejected)?;
 
-    // 2. Получаем публичные ключи Google (из кеша или запросом)
     let jwks_body = if let Some(cached) = cache.get("google_jwks").await {
         cached
     } else {
@@ -346,15 +325,12 @@ pub async fn verify_google_token(
     let jwks: GoogleJwks =
         serde_json::from_str(&jwks_body).map_err(|_| ErrorMessage::GoogleUnavailable)?;
 
-    // 3. Ищем нужный ключ по kid
     let key_data = jwks.find(&kid).ok_or(ErrorMessage::GoogleTokenRejected)?;
 
-    // 4. Настраиваем валидацию
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_audience(&[web_client_id]);
     validation.set_issuer(&["https://accounts.google.com", "accounts.google.com"]);
 
-    // 5. Декодируем и проверяем подпись
     let decoding_key = DecodingKey::from_rsa_components(&key_data.n, &key_data.e)
         .map_err(|_| ErrorMessage::GoogleTokenRejected)?;
 

@@ -12,9 +12,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
 
-/// `HttpError` несёт только `{status, message}` — для `VersionConflict` нужно
-/// вернуть актуальную запись, тот же приём, что `UpsertPersonResponse`
-/// (handlers/persons.rs).
 pub(crate) enum UpsertMedicationResponse {
     Ok(MedicationDto),
     Conflict(MedicationDto),
@@ -59,8 +56,6 @@ pub async fn list_medications(
     ))
 }
 
-/// 404 и для «не существует», и для «существует, но не ваше» — та же причина,
-/// что у `get_person_by_id` (не раскрывать перебором id чужие записи).
 pub async fn get_medication_by_id(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -76,8 +71,6 @@ pub async fn get_medication_by_id(
     Ok(Json(MedicationDto::from(medication)))
 }
 
-/// Идемпотентный upsert по client-generated `id` — тот же offline-first
-/// паттерн, что `persons.rs::upsert_person`.
 pub async fn upsert_medication(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -111,9 +104,6 @@ pub async fn upsert_medication(
     }
 }
 
-/// `ON DELETE CASCADE` подчищает связанные `medication_person_cross_ref` и
-/// `intakes` — тот же приём удаления приёмов вместе с лекарством, что
-/// Android `DeletePillsUseCase` делает вручную на клиенте.
 pub async fn delete_medication(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -128,8 +118,6 @@ pub async fn delete_medication(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Аддитивная линковка — зеркалит Android `linkPersonsToMedication`
-/// (`OnConflictStrategy.IGNORE`), этот запрос никого не отвязывает.
 pub async fn link_persons_to_medication(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -155,14 +143,11 @@ pub async fn link_persons_to_medication(
     }
 }
 
-/// Параллель Android `getPersonsByMedicationId` (медикамент -> люди).
 pub async fn get_persons_for_medication(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
     Path(medication_id): Path<Uuid>,
 ) -> Result<Json<Vec<crate::dtos::PersonDto>>, HttpError> {
-    // Сам медикамент должен быть вашим — иначе через этот путь можно
-    // перебором id узнать, какие persons привязаны к чужому лекарству.
     app_state
         .db_client
         .get_medication(medication_id)
@@ -178,9 +163,6 @@ pub async fn get_persons_for_medication(
     Ok(Json(persons.into_iter().map(crate::dtos::PersonDto::from).collect()))
 }
 
-/// `GET /persons/{id}/medications` — обратное направление (человек ->
-/// лекарства, которые он принимает). На Android такой ручки пока нет ни в
-/// одном виде, заводим с нуля; смонтирована в `persons_router()`.
 pub async fn get_medications_for_person(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,

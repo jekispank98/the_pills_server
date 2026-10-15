@@ -13,8 +13,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
 
-/// Тот же приём, что `UpsertPersonResponse`/`UpsertMedicationResponse`:
-/// `HttpError` не умеет нести тело кроме `{status, message}`.
 pub(crate) enum UpsertIntakeResponse {
     Ok(IntakeDto),
     Conflict(IntakeDto),
@@ -67,9 +65,6 @@ pub async fn get_intake_by_id(
     Ok(Json(IntakeDto::from_intake(intake, person_ids)))
 }
 
-/// Идемпотентный upsert по client-generated `id`, вместе с полным списком
-/// привязанных persons (full-replace — см. комментарий в db.rs). Требует,
-/// чтобы `medication_id` и все `person_ids` принадлежали вам же.
 pub async fn upsert_intake(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -113,7 +108,6 @@ pub async fn upsert_intake(
     }
 }
 
-/// `ON DELETE CASCADE` подчищает `intake_person_cross_ref`.
 pub async fn delete_intake(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -128,8 +122,6 @@ pub async fn delete_intake(
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Точечный переход статуса — параллель четырём `markAs*` методам Android
-/// `IntakeDao`, не трогает остальные поля апсерта.
 pub async fn set_intake_status(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,

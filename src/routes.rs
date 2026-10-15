@@ -10,13 +10,6 @@ use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, Tr
 use tracing::Level;
 
 pub fn create_routes(app_state: SharedState) -> Router {
-    // `tower-http` с фичей "trace" был объявлен в Cargo.toml, но нигде не
-    // подключён — ни один запрос не оставлял следа в консоли. По умолчанию
-    // TraceLayer пишет на DEBUG (тише, чем "info"-фильтр из main.rs), поэтому
-    // уровень явно поднят до INFO — иначе не увидите ничего без RUST_LOG.
-    // Тело запроса/ответа сюда намеренно не входит (в отличие от Android
-    // LogLevel.ALL) — body/register и /login несёт пароль в открытом виде,
-    // светить его в серверных логах не стоит даже в dev.
     let api_route = Router::new()
         .nest("/auth", auth_router())
         .nest("/users", users_router())

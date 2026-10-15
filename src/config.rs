@@ -8,7 +8,6 @@ pub struct Config {
     pub jwt_max_age: Duration,
     pub refresh_token_max_age: Duration,
     pub listen_addr: SocketAddr,
-    /// Внешний адрес сервиса — из него собираются ссылки в письмах.
     pub public_base_url: String,
     pub google_web_client_id: String,
     pub smtp: SmtpConfig,
@@ -98,13 +97,10 @@ impl Config {
         })
     }
 
-    /// Ссылка для подтверждения email. Раньше базовый адрес был захардкожен
-    /// в `mail/mails.rs` как `http://localhost:3000`.
     pub fn verification_link(&self, token: &str) -> String {
         format!("{}/auth/verify?token={}", self.public_base_url, token)
     }
 
-    /// `Secure` на cookie обязателен в production и мешает при локальной отладке по http.
     pub fn cookie_secure(&self) -> bool {
         self.env.is_production()
     }
@@ -137,7 +133,6 @@ where
 
 #[cfg(test)]
 impl Config {
-    /// Конфиг для юнит-тестов сервисного слоя — без чтения окружения.
     pub fn for_tests() -> Self {
         Config {
             database_url: "postgres://localhost/test".into(),

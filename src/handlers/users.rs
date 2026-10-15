@@ -50,8 +50,6 @@ pub async fn update_me(
     Ok(Json(UserDto::from(user)))
 }
 
-/// Каскадно удаляет и `persons` этого аккаунта — `ON DELETE CASCADE` на
-/// `persons.user_account_id` (см. миграцию).
 pub async fn delete_me(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
