@@ -1,18 +1,3 @@
-//! Первый integration-тест в этом репозитории. Версионный guard в
-//! `upsert_person` — атомарное свойство самого SQL (`UPDATE ... WHERE version
-//! = $base_version`), для него нет чистой функции-эквивалента (см.
-//! `db::tests::decide_upsert_route_*` — те покрывают только ветку владения).
-//! Единственный способ реально проверить эту логику — прогнать её против
-//! живого Postgres, поэтому тест здесь, а не в `#[cfg(test)]` внутри `db.rs`.
-//!
-//! Подключается к локальной dev-БД из `.env`/`DATABASE_URL` (в этом репозитории
-//! нет CI и нет `sqlx-cli`). Локальная dev-БД была изначально накатана не через
-//! sqlx-миграции (в ней нет полной истории `_sqlx_migrations`), поэтому
-//! `sqlx::migrate!` тут не годится — тест сам гарантирует нужную колонку через
-//! идемпотентный `ADD COLUMN IF NOT EXISTS`, не трогая остальную схему.
-//! Каждый тест создаёт свои собственные user/person со случайными UUID, общих
-//! фикстур нет — тесты не мешают друг другу и их можно гонять параллельно.
-
 use pills_server_test::db::{DbClient, PersonRepositoryTrait, PersonUpsert, PersonUpsertOutcome};
 use pills_server_test::models::person::{Gender, PersonRelation};
 use sqlx::PgPool;
@@ -31,8 +16,6 @@ async fn test_pool() -> PgPool {
     pool
 }
 
-/// Заводит независимого user (обходя пароль/почту — эти тесты не про auth) и
-/// возвращает его id, готовый как `user_account_id` для persons.
 async fn create_test_user(pool: &PgPool) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO users(name, email, password, verification_token_expires_at, subscribed, verification_token) \
@@ -98,13 +81,11 @@ async fn stale_base_version_returns_version_conflict_with_current_row() {
         .upsert_person(user_id, upsert(person_id, "First", 0))
         .await
         .unwrap();
-    // Кто-то (или та же клиентская сессия дважды) уже применил версию 0 -> 1.
     client
         .upsert_person(user_id, upsert(person_id, "Second", 0))
         .await
         .unwrap();
 
-    // Повторная попытка с устаревшей base_version = 0.
     let outcome = client
         .upsert_person(user_id, upsert(person_id, "Stale write", 0))
         .await
@@ -126,8 +107,6 @@ async fn brand_new_person_ignores_base_version_and_starts_at_zero() {
     let user_id = create_test_user(&pool).await;
     let person_id = Uuid::new_v4();
 
-    // base_version = 99 на несуществующем id — это Insert-ветка, версия не
-    // конфликтует ни с чем.
     let outcome = client
         .upsert_person(user_id, upsert(person_id, "Brand new", 99))
         .await
@@ -166,9 +145,6 @@ async fn upsert_by_a_different_owner_is_rejected_without_changing_the_row() {
 
 #[tokio::test]
 async fn two_sequential_upserts_reusing_the_returned_version_both_succeed() {
-    // Мимикрирует Android rebase-and-retry-once: клиент шлёт base_version,
-    // получает актуальную версию с сервера (тут — просто из первого ответа) и
-    // повторяет апдейт с этой версией.
     let pool = test_pool().await;
     let client = DbClient::new(pool.clone());
     let user_id = create_test_user(&pool).await;

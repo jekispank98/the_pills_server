@@ -1,17 +1,11 @@
 use serde::Deserialize;
 
-/// Claims Google ID-токена, которые нам нужны.
-///
-/// `aud`/`iss`/`exp` проверяет сама `jsonwebtoken` по `Validation`,
-/// но держим их в структуре, чтобы можно было залогировать отвергнутый токен.
 #[derive(Debug, Deserialize)]
 pub struct GoogleTokenPayload {
     pub aud: String,
     pub iss: String,
-    /// Стабильный идентификатор аккаунта — то, к чему привязываем пользователя.
     pub sub: String,
     pub email: String,
-    /// Google отдаёт этот claim и как bool, и как строку "true"/"false".
     #[serde(default, deserialize_with = "deserialize_flexible_bool")]
     pub email_verified: bool,
     pub name: Option<String>,

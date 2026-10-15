@@ -13,9 +13,6 @@ use std::sync::Arc;
 use uuid::Uuid;
 use validator::Validate;
 
-/// `HttpError` не умеет нести произвольное тело (только `{status, message}`),
-/// а `VersionConflict` должен вернуть актуальную запись — поэтому у этого
-/// хендлера свой маленький тип ответа вместо `Json<PersonDto>` напрямую.
 pub(crate) enum UpsertPersonResponse {
     Ok(PersonDto),
     Conflict(PersonDto),
@@ -39,9 +36,6 @@ pub fn persons_router() -> Router {
             "/{id}",
             get(get_person_by_id).put(upsert_person).delete(delete_person),
         )
-        // Обратное направление (человек -> лекарства, которые он принимает) —
-        // живёт в handlers/medications.rs, т.к. читает из того же
-        // MedicationRepositoryTrait, что и остальные medication-ручки.
         .route("/{id}/medications", get(get_medications_for_person))
 }
 
@@ -53,8 +47,6 @@ pub async fn list_persons(
     Ok(Json(persons.into_iter().map(PersonDto::from).collect()))
 }
 
-/// 404 и для «не существует», и для «существует, но не ваш» — чтобы нельзя
-/// было перебором id узнавать, какие persons есть у чужих аккаунтов.
 pub async fn get_person_by_id(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -70,8 +62,6 @@ pub async fn get_person_by_id(
     Ok(Json(PersonDto::from(person)))
 }
 
-/// Идемпотентный upsert по client-generated `id` из пути — offline-first:
-/// клиент создаёт `Person` локально и синкает её этим же запросом позже.
 pub async fn upsert_person(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,
@@ -97,15 +87,9 @@ pub async fn upsert_person(
 
     match app_state.db_client.upsert_person(user_id, upsert).await? {
         PersonUpsertOutcome::Ok(person) => Ok(UpsertPersonResponse::Ok(PersonDto::from(person))),
-        // Устаревшая base_version — клиент рассинхронизировался с сервером
-        // (например, тот же person уже был изменён на другом устройстве).
-        // Тело ответа несёт актуальную запись, чтобы клиент мог сделать
-        // rebase-and-retry-once.
         PersonUpsertOutcome::VersionConflict(current) => {
             Ok(UpsertPersonResponse::Conflict(PersonDto::from(current)))
         }
-        // Кто-то другой уже занял этот id (крайне маловероятное совпадение UUID,
-        // но лучше явная 403, чем молча перезаписать/подсунуть чужую запись).
         PersonUpsertOutcome::OwnedByAnotherUser => Err(HttpError::new(
             "This person id belongs to another account",
             StatusCode::FORBIDDEN,
@@ -113,8 +97,6 @@ pub async fn upsert_person(
     }
 }
 
-/// Как и в Android `ProfileViewModel`, SELF-профиль (`is_user = true`) удалить
-/// нельзя — проверка задублирована на сервере, а не только на клиенте.
 pub async fn delete_person(
     CurrentUser(user_id): CurrentUser,
     Extension(app_state): Extension<Arc<AppState>>,

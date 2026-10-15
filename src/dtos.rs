@@ -79,9 +79,6 @@ pub struct VerifyEmailQueryDto {
     pub token: String,
 }
 
-/// Профиль текущего пользователя. Пароль и токен верификации сюда не входят —
-/// `User` и не реализует `Serialize` именно чтобы такую утечку нельзя было
-/// сделать по ошибке (см. models/user.rs).
 #[derive(Debug, Serialize)]
 pub struct UserDto {
     pub id: Uuid,
@@ -113,8 +110,6 @@ impl From<User> for UserDto {
     }
 }
 
-/// `PATCH /users/me`. Все поля опциональны и означают частичное обновление —
-/// отсутствующее поле остаётся как было (см. `UserProfileUpdate`/`COALESCE` в db.rs).
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateUserRequest {
     #[validate(length(min = 1, max = 100, message = "Name must be 1-100 characters"))]
@@ -165,9 +160,6 @@ impl From<Person> for PersonDto {
     }
 }
 
-/// `PUT /persons/{id}` — идемпотентный upsert по client-generated `id`.
-/// `is_user`/`relation=SELF` сюда не входят: SELF-профиль заводится только при
-/// регистрации (см. `register_user_with_self_person`), апсерт его не создаёт и не меняет.
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpsertPersonRequest {
     #[validate(required(message = "Name is required"))]
@@ -184,9 +176,6 @@ pub struct UpsertPersonRequest {
     #[serde(default = "default_true")]
     pub is_active: bool,
     pub photo_url: Option<String>,
-    /// Последняя версия, известная клиенту (0 для новой персоны). Апдейт
-    /// применяется только если совпадает с текущей версией в БД — иначе
-    /// `PersonUpsertOutcome::VersionConflict`.
     #[serde(default)]
     pub base_version: i32,
 }
@@ -238,8 +227,6 @@ impl From<Medication> for MedicationDto {
     }
 }
 
-/// `PUT /medications/{id}` — идемпотентный upsert по client-generated `id`,
-/// тот же паттерн, что `UpsertPersonRequest`.
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpsertMedicationRequest {
     #[validate(required(message = "Name is required"))]
@@ -252,24 +239,16 @@ pub struct UpsertMedicationRequest {
     pub instruction: String,
     #[validate(required(message = "Color tag is required"))]
     pub color_tag: Option<String>,
-    /// Последняя версия, известная клиенту (0 для нового лекарства). См.
-    /// `UpsertPersonRequest::base_version`.
     #[serde(default)]
     pub base_version: i32,
 }
 
-/// `PUT /medications/{id}/persons`. Линковка аддитивная (как Android
-/// `linkPersonsToMedication`/`OnConflictStrategy.IGNORE`) — этот запрос никого
-/// не отвязывает, только добавляет.
 #[derive(Debug, Deserialize, Validate)]
 pub struct LinkPersonsRequest {
     #[validate(length(min = 1, message = "At least one person id is required"))]
     pub person_ids: Vec<Uuid>,
 }
 
-/// В отличие от `MedicationDto`, несёт `person_ids` — Android `Intake.person`
-/// хранит полные объекты, на бэкенде это join через `intake_person_cross_ref`,
-/// поэтому не `From<Intake>`, а отдельный конструктор с уже собранным списком.
 #[derive(Debug, Serialize)]
 pub struct IntakeDto {
     pub id: Uuid,
@@ -303,10 +282,6 @@ impl IntakeDto {
     }
 }
 
-/// `PUT /intakes/{id}` — upsert приёма вместе с привязанными persons. В
-/// отличие от `LinkPersonsRequest` у медикамента, здесь `person_ids` —
-/// full replace при каждом апдейте (зеркалит Android
-/// `IntakeDao.upsertIntakeWithPersons`: delete+reinsert cross-ref'ов).
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpsertIntakeRequest {
     #[validate(required(message = "Medication id is required"))]
@@ -326,8 +301,6 @@ pub struct UpsertIntakeRequest {
     pub base_version: i32,
 }
 
-/// `PATCH /intakes/{id}/status`. Зеркалит четыре DAO-метода Android
-/// `IntakeDao` один в один — см. `IntakeStatus` в models/intake.rs.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum IntakeStatusRequest {
@@ -343,8 +316,6 @@ mod tests {
 
     #[test]
     fn upsert_person_request_defaults_match_the_domain_model_defaults() {
-        // Person.kt: relation = OTHER, gender = UNSPECIFIED, isActive = true —
-        // клиент вправе не присылать эти поля вовсе.
         let request: UpsertPersonRequest =
             serde_json::from_str(r#"{"name":"Mom"}"#).unwrap();
 
@@ -370,9 +341,6 @@ mod tests {
 
     #[test]
     fn user_dto_never_carries_password_or_verification_token() {
-        // `User` не реализует `Serialize` (см. models/user.rs) именно чтобы это
-        // проверялось на уровне типов, а не рантайма — но проверим и содержимое
-        // `UserDto`, чтобы регрессия (случайно добавленное поле) не прошла тихо.
         let user = User {
             id: Uuid::nil(),
             email: "a@b.c".into(),

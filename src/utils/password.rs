@@ -5,8 +5,6 @@ use argon2::{
 
 use crate::error::ErrorMessage;
 
-/// Верхняя граница нужна не для стойкости, а чтобы никто не заставил сервер
-/// хешировать мегабайт. Argon2 сам по себе длину не ограничивает.
 const MAX_PASSWORD_LENGTH: usize = 128;
 
 
@@ -23,10 +21,6 @@ pub async fn hash_password(password: String) -> Result<String, ErrorMessage> {
     .await
 }
 
-/// Проверяет пароль против сохранённого хеша.
-///
-/// Понимает и argon2 (новый формат), и bcrypt (`$2a$`/`$2b$`/`$2y$`) — иначе после
-/// перехода на argon2 все ранее зарегистрированные пользователи не смогли бы войти.
 pub async fn verify_password(password: String, hash: String) -> Result<bool, ErrorMessage> {
     validate_length(&password)?;
 
@@ -43,15 +37,10 @@ pub async fn verify_password(password: String, hash: String) -> Result<bool, Err
     .await
 }
 
-/// Прогоняет проверку против фиктивного хеша, чтобы «пользователь не найден»
-/// стоил столько же времени, сколько «пароль неверный».
 pub async fn verify_dummy_password(password: String) {
     let _ = verify_password(password, dummy_hash().to_string()).await;
 }
 
-/// Хеш-заглушка для `verify_dummy_password`. Генерируется один раз при первом
-/// обращении (а не хранится как константа), чтобы не тащить в исходники
-/// magic-строку и не зависеть от того, не сменятся ли параметры Argon2.
 fn dummy_hash() -> &'static str {
     static HASH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     HASH.get_or_init(|| {
@@ -63,7 +52,6 @@ fn dummy_hash() -> &'static str {
     })
 }
 
-/// `true`, если хеш стоит перевесить на argon2 при следующем успешном входе.
 pub fn needs_rehash(hash: &str) -> bool {
     is_bcrypt_hash(hash)
 }
@@ -111,7 +99,6 @@ mod tests {
 
     #[tokio::test]
     async fn verifies_legacy_bcrypt_hashes() {
-        // Пользователи, зарегистрированные до перехода на argon2.
         let legacy = bcrypt::hash("legacy pass", 4).unwrap();
         assert!(needs_rehash(&legacy));
         assert!(verify_password("legacy pass".into(), legacy.clone())

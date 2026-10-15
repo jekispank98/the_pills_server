@@ -3,9 +3,6 @@ name = "JekisBackend"
 version = "0.1.0"
 edition = "2024"
 
-# Явное имя lib-таргета — main.rs и integration-тесты в tests/ оба используют
-# этот крейт (`use pills_server_test::...`) вместо дублирования `mod` в каждом
-# бинарном/тестовом корне.
 [lib]
 name = "pills_server_test"
 path = "src/lib.rs"
@@ -24,10 +21,8 @@ validator = { version = "0.20.0", features = ["derive"] }
 sqlx = { version = "0.8.2", features = ["postgres", "runtime-tokio-native-tls", "derive", "chrono", "uuid"] }
 chrono = { version = "0.4.41", features = ["serde"] }
 async-trait = "0.1.89"
-# "serde" — users.id/persons.id are Uuid and go straight into JSON DTOs.
 uuid = { version = "1.18.0", features = ["v4", "serde"] }
 
-# Пароли: argon2 — для новых хешей, bcrypt — только для проверки исторических.
 argon2 = "0.5.1"
 bcrypt = "0.17.1"
 jsonwebtoken = "9.3.1"

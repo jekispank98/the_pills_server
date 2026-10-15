@@ -16,7 +16,7 @@ impl AppState {
     pub fn new(db_pool: PgPool, config: crate::config::Config) -> Self {
         let cache = Cache::builder()
             .max_capacity(1)
-            .time_to_live(Duration::from_secs(3600 * 24)) // Кешируем на 24 часа
+            .time_to_live(Duration::from_secs(3600 * 24))
             .build();
         Self {
             db_pool: db_pool.clone(),

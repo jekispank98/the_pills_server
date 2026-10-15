@@ -12,9 +12,6 @@ pub struct TokenClaims {
     pub exp: usize,
 }
 
-/// `ttl` — единственный источник срока жизни токена. Раньше он приходил как
-/// `i64`, который в одном месте (JWT `exp`) трактовался как минуты, а в другом
-/// (cookie `max_age`) — как секунды, из-за чего cookie переживала токен в 60 раз.
 pub fn create_token(
     user_id: &str,
     secret: &[u8],
@@ -68,8 +65,6 @@ mod tests {
 
     #[test]
     fn expired_token_is_rejected() {
-        // `Validation` по умолчанию даёт 60 секунд leeway, поэтому вместо
-        // ttl=0 + сна кодируем токен с exp далеко в прошлом напрямую.
         let now = Utc::now().timestamp() as usize;
         let claims = TokenClaims {
             sub: "1".to_string(),
@@ -88,8 +83,6 @@ mod tests {
 
     #[test]
     fn ttl_is_seconds_not_minutes() {
-        // Регрессия на баг единиц измерения: раньше параметр назывался
-        // `expires_in_seconds`, но использовался как минуты.
         let token = create_token("1", SECRET, Duration::from_secs(30)).unwrap();
         let claims = decode::<TokenClaims>(
             &token,

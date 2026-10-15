@@ -6,12 +6,6 @@ use lettre::{
 };
 use std::fs;
 
-/// Раньше эта функция сама читала `SMTP_*` из окружения при каждом вызове
-/// (второй источник конфигурации помимо `Config`) и слала письмо через
-/// синхронный `SmtpTransport::send`, который блокирует поток tokio на время
-/// сетевого round-trip. Теперь конфиг приходит один раз извне, а отправка идёт
-/// через `AsyncSmtpTransport` (зависимость `lettre` уже собрана с фичами
-/// `tokio1`/`tokio1-native-tls` именно под это).
 pub async fn send_email(
     smtp: &SmtpConfig,
     to_email: &str,

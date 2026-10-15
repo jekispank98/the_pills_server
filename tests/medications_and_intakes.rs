@@ -1,17 +1,3 @@
-//! Как и `persons_version_conflict.rs`: version-guard и многошаговые
-//! транзакции (link/upsert + cross-ref replace) — атомарные свойства самого
-//! SQL, без чистого функционального эквивалента, так что это integration-тест
-//! против локального Postgres, а не unit-тест в db.rs.
-//!
-//! Схему (`medications`/`intakes`/cross-ref таблицы) тест гарантирует сам через
-//! идемпотентный `CREATE TABLE IF NOT EXISTS` — та же причина, что у
-//! `persons_version_conflict.rs::test_pool` (локальная dev-БД не накатана
-//! через sqlx-миграции, `sqlx::migrate!` тут не годится). `CREATE TABLE IF NOT
-//! EXISTS` сам по себе не защищён от гонки между параллельными тестами —
-//! Postgres не атомарен против конкурентного DDL с одинаковым именем (ловили
-//! `duplicate key value ... pg_type_typname_nsp_index`), поэтому bootstrap
-//! схемы выполняется ровно один раз на процесс через `OnceCell`.
-
 use pills_server_test::db::{
     IntakeRepositoryTrait, IntakeUpsert, IntakeUpsertOutcome, LinkPersonsOutcome,
     MedicationRepositoryTrait, MedicationUpsert, MedicationUpsertOutcome,
@@ -246,8 +232,6 @@ async fn link_persons_to_medication_is_additive_and_never_unlinks() {
         .link_persons_to_medication(medication_id, user_id, &[alice])
         .await
         .unwrap();
-    // Второй вызов с другим набором — Android `OnConflictStrategy.IGNORE`
-    // никогда не отвязывает, только добавляет.
     client
         .link_persons_to_medication(medication_id, user_id, &[bob])
         .await
@@ -377,7 +361,6 @@ async fn get_medications_for_person_returns_the_inverse_of_linking() {
         .link_persons_to_medication(aspirin_id, user_id, &[alice])
         .await
         .unwrap();
-    // Ibuprofen намеренно не линкуем к alice — не должен попасть в список.
 
     let medications = client.get_medications_for_person(alice, user_id).await.unwrap();
 
@@ -469,8 +452,6 @@ async fn intake_upsert_creates_with_persons_and_increments_version_on_update() {
 
 #[tokio::test]
 async fn intake_upsert_fully_replaces_persons_on_update_not_additive() {
-    // В отличие от medication-линковки, Android IntakeDao.upsertIntakeWithPersons
-    // делает delete+reinsert — тот же контракт должен быть и здесь.
     let pool = test_pool().await;
     let client = pills_server_test::db::DbClient::new(pool.clone());
     let user_id = create_test_user(&pool).await;
@@ -573,7 +554,7 @@ async fn set_intake_status_passed_does_not_touch_completed_or_canceled() {
 
     let (intake, _) = client.get_intake(intake_id).await.unwrap().unwrap();
     assert!(intake.is_passed);
-    assert!(intake.is_completed); // непотревоженный — тот же "перекос", что в Android markAsPassed
+    assert!(intake.is_completed);
     assert!(!intake.is_canceled);
     assert_eq!(intake.version, 1);
 }

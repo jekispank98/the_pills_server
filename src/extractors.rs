@@ -11,8 +11,6 @@ use serde::de::DeserializeOwned;
 use std::sync::Arc;
 use uuid::Uuid;
 
-/// `axum::Json<T>` отдаёт свою ошибку парсинга голым текстом, а не нашим
-/// `{status, message}` — эта обёртка конвертирует её в `HttpError`.
 pub struct JsonBody<T>(pub T);
 
 impl<T, S> FromRequest<S> for JsonBody<T>
@@ -30,18 +28,8 @@ where
     }
 }
 
-/// Id текущего пользователя, извлечённый и проверенный из сессионного JWT.
-///
-/// До этого экстрактора в проекте не было ни одного защищённого эндпоинта:
-/// `token::decode_token` существовал, но нигде не вызывался. Источник токена —
-/// cookie `token` (её выставляет `session_cookie_headers` при login/verify),
-/// либо заголовок `Authorization: Bearer <token>` — мобильный клиент не гоняет
-/// cookies автоматически.
 pub struct CurrentUser(pub Uuid);
 
-/// Достаёт сырой токен из cookie или заголовка. Отдельная чистая функция —
-/// чтобы протестировать логику поиска токена без поднятия `AppState`/БД,
-/// которых требует `FromRequestParts`.
 fn extract_raw_token(headers: &HeaderMap) -> Option<String> {
     CookieJar::from_headers(headers)
         .get("token")
@@ -101,7 +89,6 @@ mod tests {
 
     #[test]
     fn falls_back_to_bearer_header_for_clients_without_cookies() {
-        // Мобильный клиент не гоняет cookies автоматически — ему нужен этот путь.
         let mut headers = HeaderMap::new();
         headers.insert(
             header::AUTHORIZATION,
