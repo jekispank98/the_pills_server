@@ -207,6 +207,17 @@ pub struct MedicationDto {
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub version: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub person_ids: Option<Vec<Uuid>>,
+}
+
+impl MedicationDto {
+    pub fn with_person_ids(medication: Medication, person_ids: Vec<Uuid>) -> Self {
+        MedicationDto {
+            person_ids: Some(person_ids),
+            ..MedicationDto::from(medication)
+        }
+    }
 }
 
 impl From<Medication> for MedicationDto {
@@ -222,6 +233,7 @@ impl From<Medication> for MedicationDto {
             created_at: medication.created_at,
             updated_at: medication.updated_at,
             version: medication.version,
+            person_ids: None,
         }
     }
 }

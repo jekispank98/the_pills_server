@@ -51,7 +51,12 @@ pub async fn list_medications(
     Extension(app_state): Extension<Arc<AppState>>,
 ) -> Result<Json<Vec<MedicationDto>>, HttpError> {
     let medications = app_state.db_client.list_medications(user_id).await?;
-    Ok(Json(medications.into_iter().map(MedicationDto::from).collect()))
+    Ok(Json(
+        medications
+            .into_iter()
+            .map(|(medication, person_ids)| MedicationDto::with_person_ids(medication, person_ids))
+            .collect(),
+    ))
 }
 
 /// 404 и для «не существует», и для «существует, но не ваше» — та же причина,
