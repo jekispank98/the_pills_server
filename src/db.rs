@@ -4,6 +4,7 @@ use crate::models::person::{Gender, Person, PersonRelation};
 use crate::models::user::User;
 use chrono::NaiveDateTime;
 use sqlx::{query_as, Error, Pool, Postgres};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -278,7 +279,7 @@ fn intake_status_flags(status: IntakeStatus) -> (Option<bool>, Option<bool>, Opt
 
 #[async_trait::async_trait]
 pub trait MedicationRepositoryTrait {
-    async fn list_medications(&self, user_account_id: Uuid) -> Result<Vec<Medication>, Error>;
+    async fn list_medications(&self, user_account_id: Uuid) -> Result<Vec<(Medication, Vec<Uuid>)>, Error>;
 
     async fn get_medication(&self, id: Uuid) -> Result<Option<Medication>, Error>;
 
@@ -677,14 +678,36 @@ impl PersonRepositoryTrait for DbClient {
 
 #[async_trait::async_trait]
 impl MedicationRepositoryTrait for DbClient {
-    async fn list_medications(&self, user_account_id: Uuid) -> Result<Vec<Medication>, Error> {
+    async fn list_medications(&self, user_account_id: Uuid) -> Result<Vec<(Medication, Vec<Uuid>)>, Error> {
         let query =
             format!("SELECT {MEDICATION_COLUMNS} FROM medications WHERE user_account_id = $1 ORDER BY name");
 
-        query_as::<_, Medication>(&query)
+        let medications = query_as::<_, Medication>(&query)
             .bind(user_account_id)
             .fetch_all(&self.pool)
-            .await
+            .await?;
+
+        let links: Vec<(Uuid, Uuid)> = query_as(
+            "SELECT x.medication_id, x.person_id FROM medication_person_cross_ref x \
+             INNER JOIN medications m ON m.id = x.medication_id \
+             WHERE m.user_account_id = $1",
+        )
+        .bind(user_account_id)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let mut person_ids_by_medication: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+        for (medication_id, person_id) in links {
+            person_ids_by_medication.entry(medication_id).or_default().push(person_id);
+        }
+
+        Ok(medications
+            .into_iter()
+            .map(|medication| {
+                let person_ids = person_ids_by_medication.remove(&medication.id).unwrap_or_default();
+                (medication, person_ids)
+            })
+            .collect())
     }
 
     async fn get_medication(&self, id: Uuid) -> Result<Option<Medication>, Error> {

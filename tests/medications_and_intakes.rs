@@ -309,6 +309,54 @@ async fn link_persons_to_medication_rejects_a_medication_you_do_not_own() {
 }
 
 #[tokio::test]
+async fn list_medications_returns_each_medication_with_its_person_ids() {
+    let pool = test_pool().await;
+    let client = pills_server_test::db::DbClient::new(pool.clone());
+    let user_id = create_test_user(&pool).await;
+    let alice = create_test_person(&pool, user_id, "Alice").await;
+    let bob = create_test_person(&pool, user_id, "Bob").await;
+    let aspirin_id = Uuid::new_v4();
+    let ibuprofen_id = Uuid::new_v4();
+
+    client
+        .upsert_medication(user_id, medication_upsert(aspirin_id, "Aspirin", 0))
+        .await
+        .unwrap();
+    client
+        .upsert_medication(user_id, medication_upsert(ibuprofen_id, "Ibuprofen", 0))
+        .await
+        .unwrap();
+    client
+        .link_persons_to_medication(aspirin_id, user_id, &[alice, bob])
+        .await
+        .unwrap();
+
+    let other_user = create_test_user(&pool).await;
+    let other_person = create_test_person(&pool, other_user, "Carol").await;
+    let other_medication = Uuid::new_v4();
+    client
+        .upsert_medication(other_user, medication_upsert(other_medication, "Other", 0))
+        .await
+        .unwrap();
+    client
+        .link_persons_to_medication(other_medication, other_user, &[other_person])
+        .await
+        .unwrap();
+
+    let medications = client.list_medications(user_id).await.unwrap();
+
+    assert_eq!(medications.len(), 2);
+    let (aspirin, mut aspirin_persons) = medications[0].clone();
+    assert_eq!(aspirin.id, aspirin_id);
+    aspirin_persons.sort();
+    let mut expected = vec![alice, bob];
+    expected.sort();
+    assert_eq!(aspirin_persons, expected);
+    assert_eq!(medications[1].0.id, ibuprofen_id);
+    assert!(medications[1].1.is_empty());
+}
+
+#[tokio::test]
 async fn get_medications_for_person_returns_the_inverse_of_linking() {
     let pool = test_pool().await;
     let client = pills_server_test::db::DbClient::new(pool.clone());
