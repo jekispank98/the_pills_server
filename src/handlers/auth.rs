@@ -147,11 +147,13 @@ pub async fn register(
         .await?;
 
     let verification_link = app_state.config.verification_link(&token);
-    if let Err(e) =
-        send_verification_email(&app_state.config.smtp, &verification_link, &user.email, &user.name).await
-    {
-        tracing::error!(error = %e, email = %user.email, "failed to send verification email");
-    }
+    let smtp = app_state.config.smtp.clone();
+    let (to_email, username) = (user.email.clone(), user.name.clone());
+    tokio::spawn(async move {
+        if let Err(e) = send_verification_email(&smtp, &verification_link, &to_email, &username).await {
+            tracing::error!(error = %e, email = %to_email, "failed to send verification email");
+        }
+    });
 
     let response = Response {
         status: "success",
@@ -277,9 +279,13 @@ pub async fn verify_email(
         .verified_token(&query_params.token)
         .await?;
 
-    if let Err(e) = send_welcome_email(&app_state.config.smtp, &user.email, &user.name).await {
-        tracing::error!(error = %e, email = %user.email, "failed to send welcome email");
-    }
+    let smtp = app_state.config.smtp.clone();
+    let (to_email, username) = (user.email.clone(), user.name.clone());
+    tokio::spawn(async move {
+        if let Err(e) = send_welcome_email(&smtp, &to_email, &username).await {
+            tracing::error!(error = %e, email = %to_email, "failed to send welcome email");
+        }
+    });
 
     let token = token::create_token(
         &user.id.to_string(),
