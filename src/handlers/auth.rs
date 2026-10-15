@@ -1,7 +1,9 @@
-use crate::db::AuthentificationTrait;
+use crate::db::{AuthentificationTrait, RefreshTokenRepositoryTrait, RefreshTokenRotation};
 use crate::dtos::{
-    GoogleLoginDto, LoginResponseDto, LoginUserDto, RegisterUserDto, Response, VerifyEmailQueryDto,
+    GoogleLoginDto, LoginResponseDto, LoginUserDto, RefreshTokenRequestDto,
+    RefreshTokenResponseDto, RegisterUserDto, Response, VerifyEmailQueryDto,
 };
+use crate::utils::refresh_token;
 use crate::error::ErrorMessage;
 use crate::extractors::JsonBody;
 use crate::mail::mails::{send_verification_email, send_welcome_email};
@@ -34,7 +36,90 @@ pub fn auth_router() -> Router {
         .route("/register", post(register))
         .route("/verify", get(verify_email))
         .route("/google_register", post(root))
-        .route("/refresh_token", post(root))
+        .route("/refresh_token", post(refresh_session))
+        .route("/logout", post(logout))
+}
+
+const REFRESH_TOKEN_REUSE_GRACE_SECONDS: i64 = 120;
+
+fn refresh_token_expires_at(app_state: &AppState) -> Result<NaiveDateTime, HttpError> {
+    let ttl = Duration::from_std(app_state.config.refresh_token_max_age)
+        .map_err(|_| HttpError::server_error(ErrorMessage::ServerError))?;
+    Ok((Utc::now() + ttl).naive_utc())
+}
+
+async fn issue_refresh_token(app_state: &AppState, user_id: uuid::Uuid) -> Result<String, HttpError> {
+    let token = refresh_token::generate();
+    app_state
+        .db_client
+        .create_refresh_token(
+            user_id,
+            &refresh_token::hash(&token),
+            refresh_token_expires_at(app_state)?,
+        )
+        .await?;
+    Ok(token)
+}
+
+pub async fn refresh_session(
+    Extension(app_state): Extension<Arc<AppState>>,
+    JsonBody(body): JsonBody<RefreshTokenRequestDto>,
+) -> Result<impl IntoResponse, HttpError> {
+    body.validate()
+        .map_err(|e| HttpError::bad_request(e.to_string()))?;
+
+    let presented = body.refresh_token.unwrap();
+    let new_refresh_token = refresh_token::generate();
+
+    let rotation = app_state
+        .db_client
+        .rotate_refresh_token(
+            &refresh_token::hash(&presented),
+            &refresh_token::hash(&new_refresh_token),
+            refresh_token_expires_at(&app_state)?,
+            Duration::seconds(REFRESH_TOKEN_REUSE_GRACE_SECONDS),
+        )
+        .await?;
+
+    let user_id = match rotation {
+        RefreshTokenRotation::Rotated { user_id } => user_id,
+        RefreshTokenRotation::ReuseDetected => {
+            tracing::warn!("refresh token reuse detected, token family revoked");
+            return Err(HttpError::from(ErrorMessage::InvalidToken));
+        }
+        RefreshTokenRotation::Invalid => return Err(HttpError::from(ErrorMessage::InvalidToken)),
+    };
+
+    let token = token::create_token(
+        &user_id.to_string(),
+        app_state.config.jwt_secret.as_bytes(),
+        app_state.config.jwt_max_age,
+    )?;
+
+    let headers = session_cookie_headers(&app_state, &token);
+
+    Ok((
+        headers,
+        Json(RefreshTokenResponseDto {
+            token,
+            refresh_token: new_refresh_token,
+        }),
+    ))
+}
+
+pub async fn logout(
+    Extension(app_state): Extension<Arc<AppState>>,
+    JsonBody(body): JsonBody<RefreshTokenRequestDto>,
+) -> Result<StatusCode, HttpError> {
+    body.validate()
+        .map_err(|e| HttpError::bad_request(e.to_string()))?;
+
+    app_state
+        .db_client
+        .revoke_refresh_token(&refresh_token::hash(&body.refresh_token.unwrap()))
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn register(
@@ -120,12 +205,14 @@ pub async fn login(
     )?;
 
     let headers = session_cookie_headers(&app_state, &token);
+    let refresh_token = issue_refresh_token(&app_state, user.id).await?;
 
     let response = LoginResponseDto {
         id: user.id,
         email: user.email,
         name: user.name,
         token,
+        refresh_token,
         subscribed: user.subscribed,
     };
 

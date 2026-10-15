@@ -6,6 +6,7 @@ pub struct Config {
     pub database_url: String,
     pub jwt_secret: String,
     pub jwt_max_age: Duration,
+    pub refresh_token_max_age: Duration,
     pub listen_addr: SocketAddr,
     /// Внешний адрес сервиса — из него собираются ссылки в письмах.
     pub public_base_url: String,
@@ -80,6 +81,9 @@ impl Config {
             database_url: required("DATABASE_URL")?,
             jwt_secret,
             jwt_max_age: Duration::from_secs(60 * parse_or("JWT_MAXAGE", 60u64)?),
+            refresh_token_max_age: Duration::from_secs(
+                24 * 3600 * parse_or("REFRESH_TOKEN_MAXAGE_DAYS", 60u64)?,
+            ),
             listen_addr,
             public_base_url,
             google_web_client_id: required("GOOGLE_WEB_CLIENT_ID")?,
@@ -139,6 +143,7 @@ impl Config {
             database_url: "postgres://localhost/test".into(),
             jwt_secret: "test-secret-that-is-long-enough-32b".into(),
             jwt_max_age: Duration::from_secs(3600),
+            refresh_token_max_age: Duration::from_secs(60 * 24 * 3600),
             listen_addr: "127.0.0.1:3000".parse().unwrap(),
             public_base_url: "http://localhost:3000".into(),
             google_web_client_id: "test-client-id".into(),

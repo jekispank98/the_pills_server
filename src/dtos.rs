@@ -50,7 +50,21 @@ pub struct LoginResponseDto {
     pub email: String,
     pub name: String,
     pub token: String,
+    pub refresh_token: String,
     pub subscribed: bool,
+}
+
+#[derive(Debug, Deserialize, Validate)]
+pub struct RefreshTokenRequestDto {
+    #[validate(required(message = "Refresh token is required"))]
+    #[validate(length(min = 1, message = "Refresh token is required"))]
+    pub refresh_token: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RefreshTokenResponseDto {
+    pub token: String,
+    pub refresh_token: String,
 }
 
 #[derive(Serialize, Deserialize)]
