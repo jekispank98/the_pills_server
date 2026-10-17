@@ -7,6 +7,7 @@ use crate::utils::refresh_token;
 use crate::error::ErrorMessage;
 use crate::extractors::JsonBody;
 use crate::mail::mails::{send_verification_email, send_welcome_email};
+use crate::rate_limit::{limit_by_ip, RateLimiter};
 use crate::state::AppState;
 use crate::utils::{password, token};
 use crate::error::HttpError;
@@ -14,7 +15,7 @@ use axum::extract::Query;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse};
 use axum::routing::{get, post, Router};
-use axum::{Extension, Json};
+use axum::{middleware, Extension, Json};
 use axum_extra::extract::cookie::Cookie;
 use chrono::{Duration, NaiveDateTime, Utc};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
@@ -25,13 +26,17 @@ use validator::Validate;
 
 use crate::models::google_auth::{GoogleJwks, GoogleTokenPayload};
 
-pub fn auth_router() -> Router {
-    Router::new()
+pub fn auth_router(limiter: RateLimiter) -> Router {
+    let rate_limited = Router::new()
         .route("/login", post(login))
         .route("/google_login", post(google_login))
         .route("/register", post(register))
         .route("/verify", get(verify_email))
         .route("/google_register", post(google_login))
+        .route_layer(middleware::from_fn_with_state(limiter, limit_by_ip));
+
+    Router::new()
+        .merge(rate_limited)
         .route("/refresh_token", post(refresh_session))
         .route("/logout", post(logout))
 }
@@ -376,9 +381,13 @@ mod tests {
         assert_ne!(generate_token(), generate_token());
     }
 
+    fn test_limiter() -> RateLimiter {
+        RateLimiter::new(100, std::time::Duration::from_secs(60))
+    }
+
     #[tokio::test]
     async fn google_register_route_exists_for_post() {
-        let app = auth_router();
+        let app = auth_router(test_limiter());
         let request = Request::builder()
             .method(Method::POST)
             .uri("/google_register")
@@ -392,7 +401,7 @@ mod tests {
 
     #[tokio::test]
     async fn google_register_route_rejects_get_method() {
-        let app = auth_router();
+        let app = auth_router(test_limiter());
         let request = Request::builder()
             .method(Method::GET)
             .uri("/google_register")

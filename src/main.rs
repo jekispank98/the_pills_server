@@ -3,6 +3,7 @@ use pills_server_test::migrations;
 use pills_server_test::routes::create_routes;
 use pills_server_test::state::{AppState, SharedState};
 use sqlx::postgres::PgPoolOptions;
+use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
@@ -37,8 +38,11 @@ async fn main() {
         .expect("failed to bind listen address");
 
     tracing::info!(%listen_addr, "starting server");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
         .await
         .expect("server error");
     tracing::info!("server stopped");
