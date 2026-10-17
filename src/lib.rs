@@ -5,6 +5,7 @@ pub mod error;
 pub mod extractors;
 pub mod handlers;
 pub mod mail;
+pub mod migrations;
 pub mod models;
 pub mod routes;
 pub mod state;

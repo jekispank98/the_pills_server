@@ -4,6 +4,8 @@ use std::time::Duration;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub database_url: String,
+    pub database_max_connections: u32,
+    pub migrations_baseline: Option<i64>,
     pub jwt_secret: String,
     pub jwt_max_age: Duration,
     pub refresh_token_max_age: Duration,
@@ -78,6 +80,15 @@ impl Config {
 
         Ok(Config {
             database_url: required("DATABASE_URL")?,
+            database_max_connections: parse_or("DATABASE_MAX_CONNECTIONS", 10u32)?,
+            migrations_baseline: optional("MIGRATIONS_BASELINE")
+                .map(|raw| {
+                    raw.parse().map_err(|e: std::num::ParseIntError| ConfigError::Invalid {
+                        name: "MIGRATIONS_BASELINE",
+                        source: Box::new(e),
+                    })
+                })
+                .transpose()?,
             jwt_secret,
             jwt_max_age: Duration::from_secs(60 * parse_or("JWT_MAXAGE", 60u64)?),
             refresh_token_max_age: Duration::from_secs(
@@ -136,6 +147,8 @@ impl Config {
     pub fn for_tests() -> Self {
         Config {
             database_url: "postgres://localhost/test".into(),
+            database_max_connections: 10,
+            migrations_baseline: None,
             jwt_secret: "test-secret-that-is-long-enough-32b".into(),
             jwt_max_age: Duration::from_secs(3600),
             refresh_token_max_age: Duration::from_secs(60 * 24 * 3600),
