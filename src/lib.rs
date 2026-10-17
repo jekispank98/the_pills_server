@@ -7,6 +7,7 @@ pub mod handlers;
 pub mod mail;
 pub mod migrations;
 pub mod models;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 pub mod utils;
