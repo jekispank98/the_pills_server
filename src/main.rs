@@ -1,7 +1,9 @@
 use pills_server_test::config::Config;
+use pills_server_test::migrations;
 use pills_server_test::routes::create_routes;
 use pills_server_test::state::{AppState, SharedState};
-use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -16,9 +18,16 @@ async fn main() {
     let config = Config::from_env().expect("invalid configuration");
     let listen_addr = config.listen_addr;
 
-    let db_pool = PgPool::connect(&config.database_url)
+    let db_pool = PgPoolOptions::new()
+        .max_connections(config.database_max_connections)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect(&config.database_url)
         .await
         .expect("failed to connect to Postgres");
+
+    migrations::run(&db_pool, config.migrations_baseline)
+        .await
+        .expect("failed to apply database migrations");
 
     let app_state = SharedState::new(AppState::new(db_pool, config));
     let app = create_routes(app_state);
