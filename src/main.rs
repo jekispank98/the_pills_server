@@ -12,9 +12,7 @@ use tracing_subscriber::EnvFilter;
 async fn main() {
     dotenv::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .init();
+    init_logging();
 
     let config = Config::from_env().expect("invalid configuration");
     let listen_addr = config.listen_addr;
@@ -46,6 +44,31 @@ async fn main() {
         .await
         .expect("server error");
     tracing::info!("server stopped");
+}
+
+/// JSON lines when LOG_FORMAT=json, or by default with APP_ENV=production;
+/// human-readable text otherwise.
+fn init_logging() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let json = match std::env::var("LOG_FORMAT") {
+        Ok(format) => format.eq_ignore_ascii_case("json"),
+        Err(_) => matches!(
+            std::env::var("APP_ENV").as_deref(),
+            Ok("production") | Ok("prod")
+        ),
+    };
+
+    let builder = tracing_subscriber::fmt().with_env_filter(filter);
+    if json {
+        builder
+            .json()
+            .flatten_event(true)
+            .with_current_span(true)
+            .with_span_list(false)
+            .init();
+    } else {
+        builder.init();
+    }
 }
 
 async fn shutdown_signal() {
