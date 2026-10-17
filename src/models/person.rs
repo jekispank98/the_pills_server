@@ -6,6 +6,7 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "text", rename_all = "UPPERCASE")]
 #[serde(rename_all = "UPPERCASE")]
+#[derive(Default)]
 pub enum PersonRelation {
     #[sqlx(rename = "SELF")]
     #[serde(rename = "SELF")]
@@ -13,29 +14,22 @@ pub enum PersonRelation {
     Child,
     Parent,
     Spouse,
+    #[default]
     Other,
 }
 
-impl Default for PersonRelation {
-    fn default() -> Self {
-        PersonRelation::Other
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "text", rename_all = "UPPERCASE")]
 #[serde(rename_all = "UPPERCASE")]
+#[derive(Default)]
 pub enum Gender {
     Male,
     Female,
+    #[default]
     Unspecified,
 }
 
-impl Default for Gender {
-    fn default() -> Self {
-        Gender::Unspecified
-    }
-}
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct Person {
