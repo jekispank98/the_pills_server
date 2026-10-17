@@ -6,17 +6,27 @@ use crate::handlers::persons::persons_router;
 use crate::handlers::users::users_router;
 use crate::rate_limit::RateLimiter;
 use crate::state::SharedState;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::routing::Router;
 use axum::Extension;
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer};
+use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_BODY_BYTES: usize = 1024 * 1024;
+
+/// Logs the path without the query string: `/auth/verify?token=...` must not
+/// put the verification token into the logs.
+fn request_span(request: &Request) -> tracing::Span {
+    tracing::info_span!(
+        "request",
+        method = %request.method(),
+        path = %request.uri().path(),
+    )
+}
 
 pub fn create_routes(app_state: SharedState) -> Router {
     let api_route = Router::new()
@@ -33,7 +43,7 @@ pub fn create_routes(app_state: SharedState) -> Router {
         .nest("/intakes", intakes_router())
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+                .make_span_with(request_span)
                 .on_request(DefaultOnRequest::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         );
