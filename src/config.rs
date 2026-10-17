@@ -9,6 +9,7 @@ pub struct Config {
     pub jwt_secret: String,
     pub jwt_max_age: Duration,
     pub refresh_token_max_age: Duration,
+    pub auth_rate_limit_per_minute: u32,
     pub listen_addr: SocketAddr,
     pub public_base_url: String,
     pub google_web_client_id: String,
@@ -94,6 +95,7 @@ impl Config {
             refresh_token_max_age: Duration::from_secs(
                 24 * 3600 * parse_or("REFRESH_TOKEN_MAXAGE_DAYS", 60u64)?,
             ),
+            auth_rate_limit_per_minute: parse_or("AUTH_RATE_LIMIT_PER_MINUTE", 10u32)?,
             listen_addr,
             public_base_url,
             google_web_client_id: required("GOOGLE_WEB_CLIENT_ID")?,
@@ -152,6 +154,7 @@ impl Config {
             jwt_secret: "test-secret-that-is-long-enough-32b".into(),
             jwt_max_age: Duration::from_secs(3600),
             refresh_token_max_age: Duration::from_secs(60 * 24 * 3600),
+            auth_rate_limit_per_minute: 10,
             listen_addr: "127.0.0.1:3000".parse().unwrap(),
             public_base_url: "http://localhost:3000".into(),
             google_web_client_id: "test-client-id".into(),

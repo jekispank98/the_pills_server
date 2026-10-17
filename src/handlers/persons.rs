@@ -7,7 +7,7 @@ use crate::state::AppState;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, put, Router};
+use axum::routing::{get, Router};
 use axum::{Extension, Json};
 use std::sync::Arc;
 use uuid::Uuid;
