@@ -9,7 +9,7 @@ use crate::extractors::JsonBody;
 use crate::mail::mails::{send_verification_email, send_welcome_email};
 use crate::state::AppState;
 use crate::utils::{password, token};
-use crate::{error::HttpError, root};
+use crate::error::HttpError;
 use axum::extract::Query;
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse};
@@ -31,7 +31,7 @@ pub fn auth_router() -> Router {
         .route("/google_login", post(google_login))
         .route("/register", post(register))
         .route("/verify", get(verify_email))
-        .route("/google_register", post(root))
+        .route("/google_register", post(google_login))
         .route("/refresh_token", post(refresh_session))
         .route("/logout", post(logout))
 }
@@ -352,6 +352,9 @@ pub fn calculate_expiration() -> NaiveDateTime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::{Method, Request, StatusCode};
+    use tower::util::ServiceExt;
 
     #[tokio::test]
     async fn malformed_google_token_is_rejected_without_network_call() {
@@ -371,5 +374,32 @@ mod tests {
     #[test]
     fn generate_token_is_unique_per_call() {
         assert_ne!(generate_token(), generate_token());
+    }
+
+    #[tokio::test]
+    async fn google_register_route_exists_for_post() {
+        let app = auth_router();
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/google_register")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"id_token":"x"}"#))
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_ne!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn google_register_route_rejects_get_method() {
+        let app = auth_router();
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri("/google_register")
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 }
