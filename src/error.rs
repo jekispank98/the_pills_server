@@ -171,11 +171,10 @@ impl From<ErrorMessage> for HttpError {
 
 impl From<sqlx::Error> for HttpError {
     fn from(error: sqlx::Error) -> Self {
-        if let Some(db_error) = error.as_database_error() {
-            if db_error.is_unique_violation() {
+        if let Some(db_error) = error.as_database_error()
+            && db_error.is_unique_violation() {
                 return HttpError::unique_constraint_violation(ErrorMessage::EmailExist);
             }
-        }
 
         tracing::error!(error = %error, "database query failed");
         HttpError::server_error(ErrorMessage::ServerError)
