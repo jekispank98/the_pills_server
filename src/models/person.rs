@@ -18,7 +18,6 @@ pub enum PersonRelation {
     Other,
 }
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, sqlx::Type)]
 #[sqlx(type_name = "text", rename_all = "UPPERCASE")]
 #[serde(rename_all = "UPPERCASE")]
@@ -29,7 +28,6 @@ pub enum Gender {
     #[default]
     Unspecified,
 }
-
 
 #[derive(Debug, Clone, FromRow, Serialize)]
 pub struct Person {
@@ -81,7 +79,10 @@ mod tests {
         ];
         for (value, expected_json) in cases {
             assert_eq!(serde_json::to_string(&value).unwrap(), expected_json);
-            assert_eq!(serde_json::from_str::<Gender>(expected_json).unwrap(), value);
+            assert_eq!(
+                serde_json::from_str::<Gender>(expected_json).unwrap(),
+                value
+            );
         }
     }
 

@@ -3,7 +3,6 @@ use crate::config::SmtpConfig;
 
 type MailResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
-
 pub async fn send_verification_email(
     smtp: &SmtpConfig,
     verification_link: &str,
@@ -14,7 +13,10 @@ pub async fn send_verification_email(
     let template_path = "src/mail/templates/Verification-email.html";
     let placeholders = vec![
         ("{{username}}".to_string(), username.to_string()),
-        ("{{verification_link}}".to_string(), verification_link.to_string()),
+        (
+            "{{verification_link}}".to_string(),
+            verification_link.to_string(),
+        ),
     ];
 
     send_email(smtp, to_email, subject, template_path, &placeholders).await

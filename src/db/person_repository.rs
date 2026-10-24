@@ -1,7 +1,7 @@
 use super::{DbClient, UpsertRoute};
 use crate::models::person::{Gender, Person, PersonRelation};
 use chrono::NaiveDateTime;
-use sqlx::{query_as, Error};
+use sqlx::{Error, query_as};
 use uuid::Uuid;
 
 pub(super) const PERSON_COLUMNS: &str = "id, user_account_id, name, relation, is_user, birth_date, gender, \
@@ -46,8 +46,9 @@ pub trait PersonRepositoryTrait {
 #[async_trait::async_trait]
 impl PersonRepositoryTrait for DbClient {
     async fn list_persons(&self, user_account_id: Uuid) -> Result<Vec<Person>, Error> {
-        let query =
-            format!("SELECT {PERSON_COLUMNS} FROM persons WHERE user_account_id = $1 ORDER BY created_at");
+        let query = format!(
+            "SELECT {PERSON_COLUMNS} FROM persons WHERE user_account_id = $1 ORDER BY created_at"
+        );
 
         query_as::<_, Person>(&query)
             .bind(user_account_id)
@@ -143,7 +144,8 @@ impl PersonRepositoryTrait for DbClient {
                         Ok(PersonUpsertOutcome::Ok(saved))
                     }
                     None => {
-                        let current_query = format!("SELECT {PERSON_COLUMNS} FROM persons WHERE id = $1");
+                        let current_query =
+                            format!("SELECT {PERSON_COLUMNS} FROM persons WHERE id = $1");
                         let current = query_as::<_, Person>(&current_query)
                             .bind(person.id)
                             .fetch_one(&mut *tx)
@@ -157,7 +159,8 @@ impl PersonRepositoryTrait for DbClient {
     }
 
     async fn delete_person(&self, id: Uuid, user_account_id: Uuid) -> Result<bool, Error> {
-        let query = "DELETE FROM persons WHERE id = $1 AND user_account_id = $2 AND is_user = false";
+        let query =
+            "DELETE FROM persons WHERE id = $1 AND user_account_id = $2 AND is_user = false";
 
         let result = sqlx::query(query)
             .bind(id)

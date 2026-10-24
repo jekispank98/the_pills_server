@@ -15,10 +15,12 @@ async fn test_pool() -> PgPool {
         .expect("failed to connect to local dev Postgres — is it running? see .env DATABASE_URL");
     SCHEMA_READY
         .get_or_init(|| async {
-            sqlx::raw_sql(include_str!("../migrations/202610151200_add_refresh_tokens.sql"))
-                .execute(&pool)
-                .await
-                .expect("failed to ensure refresh_tokens table exists");
+            sqlx::raw_sql(include_str!(
+                "../migrations/202610151200_add_refresh_tokens.sql"
+            ))
+            .execute(&pool)
+            .await
+            .expect("failed to ensure refresh_tokens table exists");
         })
         .await;
     pool

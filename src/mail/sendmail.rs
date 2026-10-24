@@ -1,8 +1,8 @@
 use crate::config::SmtpConfig;
 use lettre::{
-    message::{header, SinglePart},
-    transport::smtp::authentication::Credentials,
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
+    message::{SinglePart, header},
+    transport::smtp::authentication::Credentials,
 };
 use std::fs;
 

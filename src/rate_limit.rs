@@ -1,12 +1,12 @@
 use crate::error::{ErrorMessage, HttpError};
 use axum::extract::{ConnectInfo, Request, State};
-use axum::http::{header, HeaderMap, HeaderValue};
+use axum::http::{HeaderMap, HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use moka::future::Cache;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 /// Fixed-window request counter per client IP. A window starts with the
@@ -57,7 +57,9 @@ pub async fn limit_by_ip(
     tracing::warn!(%ip, path = %request.uri().path(), "rate limit exceeded");
     let mut response = HttpError::from(ErrorMessage::TooManyRequests).into_http_response();
     if let Ok(retry_after) = HeaderValue::from_str(&limiter.window.as_secs().to_string()) {
-        response.headers_mut().insert(header::RETRY_AFTER, retry_after);
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, retry_after);
     }
     response
 }
@@ -84,7 +86,9 @@ fn is_local(ip: IpAddr) -> bool {
         IpAddr::V6(v6) => {
             v6.is_loopback()
                 || v6.is_unique_local()
-                || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_loopback() || v4.is_private())
+                || v6
+                    .to_ipv4_mapped()
+                    .is_some_and(|v4| v4.is_loopback() || v4.is_private())
         }
     }
 }
@@ -117,14 +121,23 @@ mod tests {
         let docker_gateway: IpAddr = "172.17.0.1".parse().unwrap();
         let internet: IpAddr = "203.0.113.9".parse().unwrap();
 
-        assert_eq!(client_ip(Some(proxy), &headers), "198.51.100.7".parse::<IpAddr>().unwrap());
-        assert_eq!(client_ip(Some(docker_gateway), &headers), "198.51.100.7".parse::<IpAddr>().unwrap());
+        assert_eq!(
+            client_ip(Some(proxy), &headers),
+            "198.51.100.7".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            client_ip(Some(docker_gateway), &headers),
+            "198.51.100.7".parse::<IpAddr>().unwrap()
+        );
         assert_eq!(client_ip(Some(internet), &headers), internet);
     }
 
     #[test]
     fn malformed_real_ip_falls_back_to_peer() {
         let proxy: IpAddr = "127.0.0.1".parse().unwrap();
-        assert_eq!(client_ip(Some(proxy), &headers_with_real_ip("not-an-ip")), proxy);
+        assert_eq!(
+            client_ip(Some(proxy), &headers_with_real_ip("not-an-ip")),
+            proxy
+        );
     }
 }

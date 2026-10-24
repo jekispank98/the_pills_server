@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -63,9 +63,7 @@ impl ErrorMessage {
             ErrorMessage::TokenNotProvided => "You are not logged in, please provide a token",
             ErrorMessage::PermissionDenied => "You are not allowed to perform this action",
             ErrorMessage::UserNotAuthenticated => "Authentication required. Please log in.",
-            ErrorMessage::EmailNotVerified => {
-                "Please confirm your email address before signing in"
-            }
+            ErrorMessage::EmailNotVerified => "Please confirm your email address before signing in",
             ErrorMessage::VerificationTokenExpired => {
                 "This verification link has expired. Request a new one."
             }
@@ -172,9 +170,10 @@ impl From<ErrorMessage> for HttpError {
 impl From<sqlx::Error> for HttpError {
     fn from(error: sqlx::Error) -> Self {
         if let Some(db_error) = error.as_database_error()
-            && db_error.is_unique_violation() {
-                return HttpError::unique_constraint_violation(ErrorMessage::EmailExist);
-            }
+            && db_error.is_unique_violation()
+        {
+            return HttpError::unique_constraint_violation(ErrorMessage::EmailExist);
+        }
 
         tracing::error!(error = %error, "database query failed");
         HttpError::server_error(ErrorMessage::ServerError)

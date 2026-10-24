@@ -1,4 +1,4 @@
-use axum::body::{to_bytes, Body};
+use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chrono::{Duration, Utc};
 use pills_server_test::config::{Config, Environment, SmtpConfig};
@@ -7,7 +7,7 @@ use pills_server_test::migrations;
 use pills_server_test::routes::create_routes;
 use pills_server_test::state::AppState;
 use pills_server_test::utils::refresh_token;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
@@ -58,7 +58,12 @@ fn test_app(pool: PgPool) -> axum::Router {
     create_routes(Arc::new(AppState::new(pool, config)))
 }
 
-async fn create_user(pool: &PgPool, verified: bool, verification_token: Option<&str>, expires_in_days: i64) -> Uuid {
+async fn create_user(
+    pool: &PgPool,
+    verified: bool,
+    verification_token: Option<&str>,
+    expires_in_days: i64,
+) -> Uuid {
     sqlx::query_scalar::<_, Uuid>(
         "INSERT INTO users(name, email, password, verification_token_expires_at, subscribed, verified, verification_token) \
          VALUES ($1, $2, 'x', $3, false, $4, $5) RETURNING id",
@@ -173,13 +178,12 @@ async fn verify_endpoint_marks_user_verified_and_token_cannot_be_reused() {
     let response = app.clone().oneshot(verify).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
 
-    let (verified, stored_token): (bool, Option<String>) = sqlx::query_as(
-        "SELECT verified, verification_token FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
+    let (verified, stored_token): (bool, Option<String>) =
+        sqlx::query_as("SELECT verified, verification_token FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert!(verified);
     assert!(stored_token.is_none());
 

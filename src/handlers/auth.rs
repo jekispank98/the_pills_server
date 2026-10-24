@@ -3,22 +3,22 @@ use crate::dtos::{
     GoogleLoginDto, LoginResponseDto, LoginUserDto, RefreshTokenRequestDto,
     RefreshTokenResponseDto, RegisterUserDto, Response, VerifyEmailQueryDto,
 };
-use crate::utils::refresh_token;
 use crate::error::ErrorMessage;
+use crate::error::HttpError;
 use crate::extractors::JsonBody;
 use crate::mail::mails::{send_verification_email, send_welcome_email};
-use crate::rate_limit::{limit_by_ip, RateLimiter};
+use crate::rate_limit::{RateLimiter, limit_by_ip};
 use crate::state::AppState;
+use crate::utils::refresh_token;
 use crate::utils::{password, token};
-use crate::error::HttpError;
 use axum::extract::Query;
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{Html, IntoResponse};
-use axum::routing::{get, post, Router};
-use axum::{middleware, Extension, Json};
+use axum::routing::{Router, get, post};
+use axum::{Extension, Json, middleware};
 use axum_extra::extract::cookie::Cookie;
 use chrono::{Duration, NaiveDateTime, Utc};
-use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use moka::future::Cache;
 use std::fs;
 use std::sync::Arc;
@@ -49,7 +49,10 @@ fn refresh_token_expires_at(app_state: &AppState) -> Result<NaiveDateTime, HttpE
     Ok((Utc::now() + ttl).naive_utc())
 }
 
-async fn issue_refresh_token(app_state: &AppState, user_id: uuid::Uuid) -> Result<String, HttpError> {
+async fn issue_refresh_token(
+    app_state: &AppState,
+    user_id: uuid::Uuid,
+) -> Result<String, HttpError> {
     let token = refresh_token::generate();
     app_state
         .db_client
@@ -146,7 +149,9 @@ pub async fn register(
     let smtp = app_state.config.smtp.clone();
     let (to_email, username) = (user.email.clone(), user.name.clone());
     tokio::spawn(async move {
-        if let Err(e) = send_verification_email(&smtp, &verification_link, &to_email, &username).await {
+        if let Err(e) =
+            send_verification_email(&smtp, &verification_link, &to_email, &username).await
+        {
             tracing::error!(error = %e, email = %to_email, "failed to send verification email");
         }
     });

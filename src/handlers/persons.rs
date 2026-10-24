@@ -7,7 +7,7 @@ use crate::state::AppState;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, Router};
+use axum::routing::{Router, get};
 use axum::{Extension, Json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -34,7 +34,9 @@ pub fn persons_router() -> Router {
         .route("/", get(list_persons))
         .route(
             "/{id}",
-            get(get_person_by_id).put(upsert_person).delete(delete_person),
+            get(get_person_by_id)
+                .put(upsert_person)
+                .delete(delete_person),
         )
         .route("/{id}/medications", get(get_medications_for_person))
 }

@@ -7,7 +7,7 @@ use crate::state::AppState;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, Router};
+use axum::routing::{Router, get};
 use axum::{Extension, Json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -22,7 +22,9 @@ impl IntoResponse for UpsertIntakeResponse {
     fn into_response(self) -> Response {
         match self {
             UpsertIntakeResponse::Ok(dto) => (StatusCode::OK, Json(dto)).into_response(),
-            UpsertIntakeResponse::Conflict(dto) => (StatusCode::CONFLICT, Json(dto)).into_response(),
+            UpsertIntakeResponse::Conflict(dto) => {
+                (StatusCode::CONFLICT, Json(dto)).into_response()
+            }
         }
     }
 }
@@ -32,7 +34,9 @@ pub fn intakes_router() -> Router {
         .route("/", get(list_intakes))
         .route(
             "/{id}",
-            get(get_intake_by_id).put(upsert_intake).delete(delete_intake),
+            get(get_intake_by_id)
+                .put(upsert_intake)
+                .delete(delete_intake),
         )
         .route("/{id}/status", axum::routing::patch(set_intake_status))
 }
@@ -86,10 +90,14 @@ pub async fn upsert_intake(
         base_version: body.base_version,
     };
 
-    match app_state.db_client.upsert_intake_with_persons(user_id, upsert).await? {
-        IntakeUpsertOutcome::Ok(intake, person_ids) => {
-            Ok(UpsertIntakeResponse::Ok(IntakeDto::from_intake(intake, person_ids)))
-        }
+    match app_state
+        .db_client
+        .upsert_intake_with_persons(user_id, upsert)
+        .await?
+    {
+        IntakeUpsertOutcome::Ok(intake, person_ids) => Ok(UpsertIntakeResponse::Ok(
+            IntakeDto::from_intake(intake, person_ids),
+        )),
         IntakeUpsertOutcome::VersionConflict(intake, person_ids) => Ok(
             UpsertIntakeResponse::Conflict(IntakeDto::from_intake(intake, person_ids)),
         ),
@@ -113,7 +121,10 @@ pub async fn delete_intake(
     Extension(app_state): Extension<Arc<AppState>>,
     Path(intake_id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    let deleted = app_state.db_client.delete_intake(intake_id, user_id).await?;
+    let deleted = app_state
+        .db_client
+        .delete_intake(intake_id, user_id)
+        .await?;
 
     if !deleted {
         return Err(HttpError::new("Intake not found", StatusCode::NOT_FOUND));

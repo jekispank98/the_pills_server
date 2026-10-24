@@ -1,5 +1,5 @@
-use sqlx::migrate::{Migrate, MigrateError, Migrator};
 use sqlx::PgPool;
+use sqlx::migrate::{Migrate, MigrateError, Migrator};
 
 pub static MIGRATOR: Migrator = sqlx::migrate!();
 
@@ -33,7 +33,10 @@ async fn mark_applied_up_to(pool: &PgPool, baseline: i64) -> Result<(), MigrateE
         .bind(&*migration.checksum)
         .execute(&mut *conn)
         .await?;
-        tracing::info!(version = migration.version, "migration marked as applied (baseline)");
+        tracing::info!(
+            version = migration.version,
+            "migration marked as applied (baseline)"
+        );
     }
     Ok(())
 }
@@ -46,6 +49,9 @@ mod tests {
     fn migrations_are_ordered_and_start_with_users_table() {
         let versions: Vec<i64> = MIGRATOR.iter().map(|m| m.version).collect();
         assert!(versions.windows(2).all(|w| w[0] < w[1]));
-        assert_eq!(&*MIGRATOR.iter().next().unwrap().description, "create users");
+        assert_eq!(
+            &*MIGRATOR.iter().next().unwrap().description,
+            "create users"
+        );
     }
 }
