@@ -26,7 +26,6 @@ impl DbClient {
     }
 }
 
-
 #[derive(Debug, PartialEq, Eq)]
 enum UpsertRoute {
     Insert,
@@ -70,5 +69,4 @@ mod tests {
             UpsertRoute::OwnedByAnotherUser
         );
     }
-
 }

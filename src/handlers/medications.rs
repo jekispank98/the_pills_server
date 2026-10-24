@@ -1,4 +1,6 @@
-use crate::db::{LinkPersonsOutcome, MedicationRepositoryTrait, MedicationUpsert, MedicationUpsertOutcome};
+use crate::db::{
+    LinkPersonsOutcome, MedicationRepositoryTrait, MedicationUpsert, MedicationUpsertOutcome,
+};
 use crate::dtos::{LinkPersonsRequest, MedicationDto, UpsertMedicationRequest};
 use crate::error::HttpError;
 use crate::extractors::{CurrentUser, JsonBody};
@@ -6,7 +8,7 @@ use crate::state::AppState;
 use axum::extract::Path;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, Router};
+use axum::routing::{Router, get};
 use axum::{Extension, Json};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -90,13 +92,17 @@ pub async fn upsert_medication(
         base_version: body.base_version,
     };
 
-    match app_state.db_client.upsert_medication(user_id, upsert).await? {
-        MedicationUpsertOutcome::Ok(medication) => {
-            Ok(UpsertMedicationResponse::Ok(MedicationDto::from(medication)))
-        }
-        MedicationUpsertOutcome::VersionConflict(current) => {
-            Ok(UpsertMedicationResponse::Conflict(MedicationDto::from(current)))
-        }
+    match app_state
+        .db_client
+        .upsert_medication(user_id, upsert)
+        .await?
+    {
+        MedicationUpsertOutcome::Ok(medication) => Ok(UpsertMedicationResponse::Ok(
+            MedicationDto::from(medication),
+        )),
+        MedicationUpsertOutcome::VersionConflict(current) => Ok(
+            UpsertMedicationResponse::Conflict(MedicationDto::from(current)),
+        ),
         MedicationUpsertOutcome::OwnedByAnotherUser => Err(HttpError::new(
             "This medication id belongs to another account",
             StatusCode::FORBIDDEN,
@@ -109,10 +115,16 @@ pub async fn delete_medication(
     Extension(app_state): Extension<Arc<AppState>>,
     Path(medication_id): Path<Uuid>,
 ) -> Result<StatusCode, HttpError> {
-    let deleted = app_state.db_client.delete_medication(medication_id, user_id).await?;
+    let deleted = app_state
+        .db_client
+        .delete_medication(medication_id, user_id)
+        .await?;
 
     if !deleted {
-        return Err(HttpError::new("Medication not found", StatusCode::NOT_FOUND));
+        return Err(HttpError::new(
+            "Medication not found",
+            StatusCode::NOT_FOUND,
+        ));
     }
 
     Ok(StatusCode::NO_CONTENT)
@@ -133,9 +145,10 @@ pub async fn link_persons_to_medication(
         .await?
     {
         LinkPersonsOutcome::Ok => Ok(StatusCode::NO_CONTENT),
-        LinkPersonsOutcome::MedicationNotOwned => {
-            Err(HttpError::new("Medication not found", StatusCode::NOT_FOUND))
-        }
+        LinkPersonsOutcome::MedicationNotOwned => Err(HttpError::new(
+            "Medication not found",
+            StatusCode::NOT_FOUND,
+        )),
         LinkPersonsOutcome::SomePersonsNotOwned => Err(HttpError::new(
             "One or more persons do not belong to your account",
             StatusCode::FORBIDDEN,
@@ -160,7 +173,12 @@ pub async fn get_persons_for_medication(
         .get_persons_for_medication(medication_id)
         .await?;
 
-    Ok(Json(persons.into_iter().map(crate::dtos::PersonDto::from).collect()))
+    Ok(Json(
+        persons
+            .into_iter()
+            .map(crate::dtos::PersonDto::from)
+            .collect(),
+    ))
 }
 
 pub async fn get_medications_for_person(
@@ -173,5 +191,7 @@ pub async fn get_medications_for_person(
         .get_medications_for_person(person_id, user_id)
         .await?;
 
-    Ok(Json(medications.into_iter().map(MedicationDto::from).collect()))
+    Ok(Json(
+        medications.into_iter().map(MedicationDto::from).collect(),
+    ))
 }

@@ -1,7 +1,7 @@
 use super::{DbClient, UpsertRoute};
 use crate::models::intake::{Intake, IntakeStatus};
 use chrono::NaiveDateTime;
-use sqlx::{query_as, Error};
+use sqlx::{Error, query_as};
 use uuid::Uuid;
 
 const INTAKE_COLUMNS: &str = "id, user_account_id, medication_id, time, pre_time, \
@@ -71,8 +71,9 @@ impl DbClient {
 #[async_trait::async_trait]
 impl IntakeRepositoryTrait for DbClient {
     async fn list_intakes(&self, user_account_id: Uuid) -> Result<Vec<(Intake, Vec<Uuid>)>, Error> {
-        let query =
-            format!("SELECT {INTAKE_COLUMNS} FROM intakes WHERE user_account_id = $1 ORDER BY time");
+        let query = format!(
+            "SELECT {INTAKE_COLUMNS} FROM intakes WHERE user_account_id = $1 ORDER BY time"
+        );
 
         let intakes = query_as::<_, Intake>(&query)
             .bind(user_account_id)
@@ -220,11 +221,13 @@ impl IntakeRepositoryTrait for DbClient {
             .execute(&mut *tx)
             .await?;
         for person_id in &intake.person_ids {
-            sqlx::query("INSERT INTO intake_person_cross_ref (intake_id, person_id) VALUES ($1, $2)")
-                .bind(saved.id)
-                .bind(person_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "INSERT INTO intake_person_cross_ref (intake_id, person_id) VALUES ($1, $2)",
+            )
+            .bind(saved.id)
+            .bind(person_id)
+            .execute(&mut *tx)
+            .await?;
         }
 
         tx.commit().await?;

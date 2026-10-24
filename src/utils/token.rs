@@ -1,5 +1,5 @@
 use chrono::Utc;
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -30,7 +30,11 @@ pub fn create_token(
         exp,
     };
 
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(secret))
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret),
+    )
 }
 
 pub fn decode_token<T: Into<String>>(token: T, secret: &[u8]) -> Result<String, HttpError> {
@@ -71,7 +75,12 @@ mod tests {
             iat: now - 7200,
             exp: now - 3600,
         };
-        let token = encode(&Header::default(), &claims, &EncodingKey::from_secret(SECRET)).unwrap();
+        let token = encode(
+            &Header::default(),
+            &claims,
+            &EncodingKey::from_secret(SECRET),
+        )
+        .unwrap();
         assert!(decode_token(token, SECRET).is_err());
     }
 
@@ -84,15 +93,11 @@ mod tests {
     #[test]
     fn ttl_is_seconds_not_minutes() {
         let token = create_token("1", SECRET, Duration::from_secs(30)).unwrap();
-        let claims = decode::<TokenClaims>(
-            &token,
-            &DecodingKey::from_secret(SECRET),
-            &{
-                let mut v = Validation::new(Algorithm::HS256);
-                v.leeway = 0;
-                v
-            },
-        )
+        let claims = decode::<TokenClaims>(&token, &DecodingKey::from_secret(SECRET), &{
+            let mut v = Validation::new(Algorithm::HS256);
+            v.leeway = 0;
+            v
+        })
         .unwrap()
         .claims;
         assert_eq!(claims.exp - claims.iat, 30);

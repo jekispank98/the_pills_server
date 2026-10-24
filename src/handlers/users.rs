@@ -4,7 +4,7 @@ use crate::error::{ErrorMessage, HttpError};
 use crate::extractors::{CurrentUser, JsonBody};
 use crate::state::AppState;
 use axum::http::StatusCode;
-use axum::routing::{get, Router};
+use axum::routing::{Router, get};
 use axum::{Extension, Json};
 use std::sync::Arc;
 use validator::Validate;

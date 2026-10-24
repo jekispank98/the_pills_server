@@ -6,10 +6,10 @@ use crate::handlers::persons::persons_router;
 use crate::handlers::users::users_router;
 use crate::rate_limit::RateLimiter;
 use crate::state::SharedState;
+use axum::Extension;
 use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::StatusCode;
 use axum::routing::Router;
-use axum::Extension;
 use std::time::Duration;
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::{DefaultOnRequest, DefaultOnResponse, TraceLayer};
@@ -82,7 +82,10 @@ mod tests {
 
     #[tokio::test]
     async fn health_reports_unavailable_database() {
-        let request = Request::builder().uri("/health").body(Body::empty()).unwrap();
+        let request = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
         let response = app_without_database().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
@@ -121,7 +124,13 @@ mod tests {
         assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
         assert_eq!(response.headers()["retry-after"], "60");
 
-        let health = Request::builder().uri("/health").body(Body::empty()).unwrap();
-        assert_ne!(app.oneshot(health).await.unwrap().status(), StatusCode::TOO_MANY_REQUESTS);
+        let health = Request::builder()
+            .uri("/health")
+            .body(Body::empty())
+            .unwrap();
+        assert_ne!(
+            app.oneshot(health).await.unwrap().status(),
+            StatusCode::TOO_MANY_REQUESTS
+        );
     }
 }

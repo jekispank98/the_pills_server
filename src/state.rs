@@ -1,8 +1,8 @@
 use crate::db::DbClient;
+use moka::future::Cache;
 use sqlx::PgPool;
 use std::sync::Arc;
 use std::time::Duration;
-use moka::future::Cache;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -22,7 +22,7 @@ impl AppState {
             db_pool: db_pool.clone(),
             db_client: DbClient::new(db_pool),
             config,
-            google_keys_cache: cache
+            google_keys_cache: cache,
         }
     }
 }

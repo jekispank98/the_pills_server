@@ -3,9 +3,9 @@ use crate::state::AppState;
 use crate::utils::token;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{FromRequest, FromRequestParts, Request};
+use axum::http::HeaderMap;
 use axum::http::header;
 use axum::http::request::Parts;
-use axum::http::HeaderMap;
 use axum_extra::extract::cookie::CookieJar;
 use serde::de::DeserializeOwned;
 use std::sync::Arc;
@@ -21,9 +21,9 @@ where
     type Rejection = HttpError;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let axum::Json(value) = axum::Json::<T>::from_request(req, state)
-            .await
-            .map_err(|rejection: JsonRejection| HttpError::new(rejection.body_text(), rejection.status()))?;
+        let axum::Json(value) = axum::Json::<T>::from_request(req, state).await.map_err(
+            |rejection: JsonRejection| HttpError::new(rejection.body_text(), rejection.status()),
+        )?;
         Ok(JsonBody(value))
     }
 }
@@ -100,7 +100,10 @@ mod tests {
     #[test]
     fn cookie_takes_priority_over_header_when_both_present() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::COOKIE, HeaderValue::from_static("token=from-cookie"));
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_static("token=from-cookie"),
+        );
         headers.insert(
             header::AUTHORIZATION,
             HeaderValue::from_static("Bearer from-header"),

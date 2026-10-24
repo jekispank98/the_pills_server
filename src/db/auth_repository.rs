@@ -1,9 +1,9 @@
-use super::person_repository::PERSON_COLUMNS;
 use super::DbClient;
+use super::person_repository::PERSON_COLUMNS;
 use crate::models::person::{Person, PersonRelation};
 use crate::models::user::User;
 use chrono::NaiveDateTime;
-use sqlx::{query_as, Error};
+use sqlx::{Error, query_as};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, Default)]

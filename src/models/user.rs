@@ -81,7 +81,10 @@ mod tests {
     fn debug_output_hides_secrets() {
         let rendered = format!("{:?}", sample());
         assert!(!rendered.contains("argon2id"), "hash leaked: {rendered}");
-        assert!(!rendered.contains("secret-token"), "token leaked: {rendered}");
+        assert!(
+            !rendered.contains("secret-token"),
+            "token leaked: {rendered}"
+        );
         assert!(rendered.contains("<redacted>"));
     }
 }

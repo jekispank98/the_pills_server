@@ -1,12 +1,11 @@
 use argon2::{
-    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
+    password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
 };
 
 use crate::error::ErrorMessage;
 
 const MAX_PASSWORD_LENGTH: usize = 128;
-
 
 pub async fn hash_password(password: String) -> Result<String, ErrorMessage> {
     validate_length(&password)?;
@@ -91,9 +90,11 @@ mod tests {
     #[tokio::test]
     async fn argon2_roundtrip() {
         let hash = hash_password("correct horse".into()).await.unwrap();
-        assert!(verify_password("correct horse".into(), hash.clone())
-            .await
-            .unwrap());
+        assert!(
+            verify_password("correct horse".into(), hash.clone())
+                .await
+                .unwrap()
+        );
         assert!(!verify_password("wrong horse".into(), hash).await.unwrap());
     }
 
@@ -101,9 +102,11 @@ mod tests {
     async fn verifies_legacy_bcrypt_hashes() {
         let legacy = bcrypt::hash("legacy pass", 4).unwrap();
         assert!(needs_rehash(&legacy));
-        assert!(verify_password("legacy pass".into(), legacy.clone())
-            .await
-            .unwrap());
+        assert!(
+            verify_password("legacy pass".into(), legacy.clone())
+                .await
+                .unwrap()
+        );
         assert!(!verify_password("nope".into(), legacy).await.unwrap());
     }
 
@@ -120,7 +123,9 @@ mod tests {
             ErrorMessage::EmptyPassword
         );
         assert_eq!(
-            hash_password("x".repeat(MAX_PASSWORD_LENGTH + 1)).await.unwrap_err(),
+            hash_password("x".repeat(MAX_PASSWORD_LENGTH + 1))
+                .await
+                .unwrap_err(),
             ErrorMessage::ExceededMaxPasswordLength(MAX_PASSWORD_LENGTH)
         );
     }

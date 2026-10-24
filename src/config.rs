@@ -59,12 +59,13 @@ impl Config {
 
         let host = optional("HOST").unwrap_or_else(|| "127.0.0.1".to_string());
         let port = parse_or("PORT", 3000u16)?;
-        let listen_addr = format!("{host}:{port}")
-            .parse()
-            .map_err(|e: std::net::AddrParseError| ConfigError::Invalid {
-                name: "HOST",
-                source: Box::new(e),
-            })?;
+        let listen_addr =
+            format!("{host}:{port}")
+                .parse()
+                .map_err(|e: std::net::AddrParseError| ConfigError::Invalid {
+                    name: "HOST",
+                    source: Box::new(e),
+                })?;
 
         let public_base_url = optional("PUBLIC_BASE_URL")
             .unwrap_or_else(|| format!("http://{listen_addr}"))
@@ -84,10 +85,11 @@ impl Config {
             database_max_connections: parse_or("DATABASE_MAX_CONNECTIONS", 10u32)?,
             migrations_baseline: optional("MIGRATIONS_BASELINE")
                 .map(|raw| {
-                    raw.parse().map_err(|e: std::num::ParseIntError| ConfigError::Invalid {
-                        name: "MIGRATIONS_BASELINE",
-                        source: Box::new(e),
-                    })
+                    raw.parse()
+                        .map_err(|e: std::num::ParseIntError| ConfigError::Invalid {
+                            name: "MIGRATIONS_BASELINE",
+                            source: Box::new(e),
+                        })
                 })
                 .transpose()?,
             jwt_secret,

@@ -75,7 +75,7 @@ pub struct Response {
 
 #[derive(Serialize, Deserialize, Validate)]
 pub struct VerifyEmailQueryDto {
-    #[validate(length(min = 1, message = "Token is required."),)]
+    #[validate(length(min = 1, message = "Token is required."))]
     pub token: String,
 }
 
@@ -316,8 +316,7 @@ mod tests {
 
     #[test]
     fn upsert_person_request_defaults_match_the_domain_model_defaults() {
-        let request: UpsertPersonRequest =
-            serde_json::from_str(r#"{"name":"Mom"}"#).unwrap();
+        let request: UpsertPersonRequest = serde_json::from_str(r#"{"name":"Mom"}"#).unwrap();
 
         assert_eq!(request.relation, PersonRelation::Other);
         assert_eq!(request.gender, Gender::Unspecified);

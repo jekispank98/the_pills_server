@@ -1,9 +1,7 @@
-use super::{
-    DbClient, UpsertRoute,
-};
+use super::{DbClient, UpsertRoute};
 use crate::models::medication::{Medication, MedicationForm};
 use crate::models::person::Person;
-use sqlx::{query_as, Error};
+use sqlx::{Error, query_as};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -35,7 +33,10 @@ pub enum LinkPersonsOutcome {
 
 #[async_trait::async_trait]
 pub trait MedicationRepositoryTrait {
-    async fn list_medications(&self, user_account_id: Uuid) -> Result<Vec<(Medication, Vec<Uuid>)>, Error>;
+    async fn list_medications(
+        &self,
+        user_account_id: Uuid,
+    ) -> Result<Vec<(Medication, Vec<Uuid>)>, Error>;
 
     async fn get_medication(&self, id: Uuid) -> Result<Option<Medication>, Error>;
 
@@ -65,9 +66,13 @@ pub trait MedicationRepositoryTrait {
 
 #[async_trait::async_trait]
 impl MedicationRepositoryTrait for DbClient {
-    async fn list_medications(&self, user_account_id: Uuid) -> Result<Vec<(Medication, Vec<Uuid>)>, Error> {
-        let query =
-            format!("SELECT {MEDICATION_COLUMNS} FROM medications WHERE user_account_id = $1 ORDER BY name");
+    async fn list_medications(
+        &self,
+        user_account_id: Uuid,
+    ) -> Result<Vec<(Medication, Vec<Uuid>)>, Error> {
+        let query = format!(
+            "SELECT {MEDICATION_COLUMNS} FROM medications WHERE user_account_id = $1 ORDER BY name"
+        );
 
         let medications = query_as::<_, Medication>(&query)
             .bind(user_account_id)
@@ -85,7 +90,10 @@ impl MedicationRepositoryTrait for DbClient {
 
         let mut person_ids_by_medication: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
         for (medication_id, person_id) in links {
-            person_ids_by_medication.entry(medication_id).or_default().push(person_id);
+            person_ids_by_medication
+                .entry(medication_id)
+                .or_default()
+                .push(person_id);
         }
 
         Ok(medications

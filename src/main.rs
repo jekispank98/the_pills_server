@@ -41,8 +41,8 @@ async fn main() {
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("server error");
+    .await
+    .expect("server error");
     tracing::info!("server stopped");
 }
 

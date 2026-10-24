@@ -17,12 +17,13 @@ async fn test_pool() -> PgPool {
         .await
         .expect("failed to connect to local dev Postgres — is it running? see .env DATABASE_URL");
 
-    SCHEMA_READY.get_or_init(|| ensure_schema(pool.clone())).await;
+    SCHEMA_READY
+        .get_or_init(|| ensure_schema(pool.clone()))
+        .await;
     pool
 }
 
 async fn ensure_schema(pool: PgPool) {
-
     sqlx::query("ALTER TABLE persons ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0")
         .execute(&pool)
         .await
@@ -211,7 +212,10 @@ async fn medication_upsert_by_a_different_owner_is_rejected() {
         .await
         .unwrap();
 
-    assert!(matches!(outcome, MedicationUpsertOutcome::OwnedByAnotherUser));
+    assert!(matches!(
+        outcome,
+        MedicationUpsertOutcome::OwnedByAnotherUser
+    ));
 }
 
 #[tokio::test]
@@ -237,7 +241,10 @@ async fn link_persons_to_medication_is_additive_and_never_unlinks() {
         .await
         .unwrap();
 
-    let persons = client.get_persons_for_medication(medication_id).await.unwrap();
+    let persons = client
+        .get_persons_for_medication(medication_id)
+        .await
+        .unwrap();
     let mut names: Vec<_> = persons.into_iter().map(|p| p.name).collect();
     names.sort();
     assert_eq!(names, vec!["Alice", "Bob"]);
@@ -263,11 +270,13 @@ async fn link_persons_to_medication_rejects_a_person_you_do_not_own() {
         .unwrap();
 
     assert!(matches!(outcome, LinkPersonsOutcome::SomePersonsNotOwned));
-    assert!(client
-        .get_persons_for_medication(medication_id)
-        .await
-        .unwrap()
-        .is_empty());
+    assert!(
+        client
+            .get_persons_for_medication(medication_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[tokio::test]
@@ -362,7 +371,10 @@ async fn get_medications_for_person_returns_the_inverse_of_linking() {
         .await
         .unwrap();
 
-    let medications = client.get_medications_for_person(alice, user_id).await.unwrap();
+    let medications = client
+        .get_medications_for_person(alice, user_id)
+        .await
+        .unwrap();
 
     assert_eq!(medications.len(), 1);
     assert_eq!(medications[0].name, "Aspirin");
@@ -393,13 +405,21 @@ async fn delete_medication_cascades_to_cross_refs_and_intakes() {
         .await
         .unwrap();
 
-    let deleted = client.delete_medication(medication_id, user_id).await.unwrap();
+    let deleted = client
+        .delete_medication(medication_id, user_id)
+        .await
+        .unwrap();
 
     assert!(deleted);
     assert!(client.get_intake(intake_id).await.unwrap().is_none());
 }
 
-fn intake_upsert(id: Uuid, medication_id: Uuid, person_ids: Vec<Uuid>, base_version: i32) -> IntakeUpsert {
+fn intake_upsert(
+    id: Uuid,
+    medication_id: Uuid,
+    person_ids: Vec<Uuid>,
+    base_version: i32,
+) -> IntakeUpsert {
     use chrono::NaiveDateTime;
     IntakeUpsert {
         id,
@@ -429,7 +449,10 @@ async fn intake_upsert_creates_with_persons_and_increments_version_on_update() {
         .unwrap();
 
     let created = client
-        .upsert_intake_with_persons(user_id, intake_upsert(intake_id, medication_id, vec![alice], 0))
+        .upsert_intake_with_persons(
+            user_id,
+            intake_upsert(intake_id, medication_id, vec![alice], 0),
+        )
         .await
         .unwrap();
     match created {
@@ -441,7 +464,10 @@ async fn intake_upsert_creates_with_persons_and_increments_version_on_update() {
     }
 
     let updated = client
-        .upsert_intake_with_persons(user_id, intake_upsert(intake_id, medication_id, vec![alice], 0))
+        .upsert_intake_with_persons(
+            user_id,
+            intake_upsert(intake_id, medication_id, vec![alice], 0),
+        )
         .await
         .unwrap();
     match updated {
@@ -465,12 +491,18 @@ async fn intake_upsert_fully_replaces_persons_on_update_not_additive() {
         .await
         .unwrap();
     client
-        .upsert_intake_with_persons(user_id, intake_upsert(intake_id, medication_id, vec![alice], 0))
+        .upsert_intake_with_persons(
+            user_id,
+            intake_upsert(intake_id, medication_id, vec![alice], 0),
+        )
         .await
         .unwrap();
 
     let outcome = client
-        .upsert_intake_with_persons(user_id, intake_upsert(intake_id, medication_id, vec![bob], 0))
+        .upsert_intake_with_persons(
+            user_id,
+            intake_upsert(intake_id, medication_id, vec![bob], 0),
+        )
         .await
         .unwrap();
 
@@ -542,7 +574,10 @@ async fn set_intake_status_passed_does_not_touch_completed_or_canceled() {
         .unwrap();
     let mut initial = intake_upsert(intake_id, medication_id, vec![], 0);
     initial.is_completed = true;
-    client.upsert_intake_with_persons(user_id, initial).await.unwrap();
+    client
+        .upsert_intake_with_persons(user_id, initial)
+        .await
+        .unwrap();
 
     let (updated, _) = client
         .set_intake_status(intake_id, user_id, IntakeStatus::Passed)
@@ -574,7 +609,10 @@ async fn set_intake_status_uncompleted_clears_all_three_flags() {
     let mut initial = intake_upsert(intake_id, medication_id, vec![], 0);
     initial.is_completed = true;
     initial.is_passed = true;
-    client.upsert_intake_with_persons(user_id, initial).await.unwrap();
+    client
+        .upsert_intake_with_persons(user_id, initial)
+        .await
+        .unwrap();
 
     client
         .set_intake_status(intake_id, user_id, IntakeStatus::Uncompleted)
