@@ -62,6 +62,7 @@ where
         let subject = token::decode_token(raw_token, app_state.config.jwt_secret.as_bytes())?;
         let user_id =
             Uuid::parse_str(&subject).map_err(|_| HttpError::from(ErrorMessage::InvalidToken))?;
+        tracing::Span::current().record("user_id", tracing::field::display(user_id));
 
         Ok(CurrentUser(user_id))
     }

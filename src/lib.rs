@@ -2,6 +2,7 @@ pub mod config;
 pub mod db;
 pub mod dtos;
 pub mod error;
+pub mod error_reporting;
 pub mod extractors;
 pub mod handlers;
 pub mod mail;
