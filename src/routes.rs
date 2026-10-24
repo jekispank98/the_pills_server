@@ -7,7 +7,7 @@ use crate::handlers::users::users_router;
 use crate::rate_limit::RateLimiter;
 use crate::state::SharedState;
 use axum::Extension;
-use axum::extract::{DefaultBodyLimit, Request};
+use axum::extract::{DefaultBodyLimit, MatchedPath, Request};
 use axum::http::StatusCode;
 use axum::routing::Router;
 use std::time::Duration;
@@ -19,12 +19,19 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_BODY_BYTES: usize = 1024 * 1024;
 
 /// Logs the path without the query string: `/auth/verify?token=...` must not
-/// put the verification token into the logs.
+/// put the verification token into the logs. `route` is the matched route
+/// template; `user_id` is filled in by the `CurrentUser` extractor.
 fn request_span(request: &Request) -> tracing::Span {
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(MatchedPath::as_str);
     tracing::info_span!(
         "request",
         method = %request.method(),
         path = %request.uri().path(),
+        route,
+        user_id = tracing::field::Empty,
     )
 }
 

@@ -1,4 +1,5 @@
 use pills_server_test::config::Config;
+use pills_server_test::error_reporting::{self, ErrorReporting};
 use pills_server_test::migrations;
 use pills_server_test::routes::create_routes;
 use pills_server_test::state::{AppState, SharedState};
@@ -6,13 +7,15 @@ use sqlx::postgres::PgPoolOptions;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::net::TcpListener;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{EnvFilter, Layer, fmt};
 
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
 
-    init_logging();
+    let error_reporting = init_logging();
 
     let config = Config::from_env().expect("invalid configuration");
     let listen_addr = config.listen_addr;
@@ -44,11 +47,16 @@ async fn main() {
     .await
     .expect("server error");
     tracing::info!("server stopped");
+
+    if let Some(error_reporting) = error_reporting {
+        error_reporting.flush(Duration::from_secs(2));
+    }
 }
 
 /// JSON lines when LOG_FORMAT=json, or by default with APP_ENV=production;
-/// human-readable text otherwise.
-fn init_logging() {
+/// human-readable text otherwise. Errors and panics also go to the error
+/// tracker when SENTRY_DSN is set.
+fn init_logging() -> Option<ErrorReporting> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let json = match std::env::var("LOG_FORMAT") {
         Ok(format) => format.eq_ignore_ascii_case("json"),
@@ -57,18 +65,29 @@ fn init_logging() {
             Ok("production") | Ok("prod")
         ),
     };
+    let (reporting, reporting_layer) = ErrorReporting::from_env()
+        .expect("invalid error reporting configuration")
+        .unzip();
 
-    let builder = tracing_subscriber::fmt().with_env_filter(filter);
-    if json {
-        builder
+    let fmt_layer = if json {
+        fmt::layer()
             .json()
             .flatten_event(true)
             .with_current_span(true)
             .with_span_list(false)
-            .init();
+            .boxed()
     } else {
-        builder.init();
-    }
+        fmt::layer().boxed()
+    };
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt_layer)
+        .with(reporting_layer)
+        .init();
+    error_reporting::install_panic_hook();
+
+    tracing::info!(enabled = reporting.is_some(), "error reporting");
+    reporting
 }
 
 async fn shutdown_signal() {
