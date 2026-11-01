@@ -253,6 +253,7 @@ pub struct LinkPersonsRequest {
 pub struct IntakeDto {
     pub id: Uuid,
     pub medication_id: Uuid,
+    pub series_id: Option<Uuid>,
     pub time: NaiveDateTime,
     pub pre_time: Option<NaiveDateTime>,
     pub person_ids: Vec<Uuid>,
@@ -269,6 +270,7 @@ impl IntakeDto {
         IntakeDto {
             id: intake.id,
             medication_id: intake.medication_id,
+            series_id: intake.series_id,
             time: intake.time,
             pre_time: intake.pre_time,
             person_ids,
@@ -286,6 +288,7 @@ impl IntakeDto {
 pub struct UpsertIntakeRequest {
     #[validate(required(message = "Medication id is required"))]
     pub medication_id: Option<Uuid>,
+    pub series_id: Option<Uuid>,
     #[validate(required(message = "Time is required"))]
     pub time: Option<NaiveDateTime>,
     pub pre_time: Option<NaiveDateTime>,

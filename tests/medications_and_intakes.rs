@@ -28,6 +28,10 @@ async fn ensure_schema(pool: PgPool) {
         .execute(&pool)
         .await
         .expect("failed to ensure persons.version column exists");
+    sqlx::query("ALTER TABLE intakes ADD COLUMN IF NOT EXISTS series_id UUID")
+        .execute(&pool)
+        .await
+        .expect("failed to ensure intakes.series_id column exists");
 
     sqlx::query(
         r#"
@@ -424,6 +428,7 @@ fn intake_upsert(
     IntakeUpsert {
         id,
         medication_id,
+        series_id: None,
         time: "2026-01-01T09:00:00".parse::<NaiveDateTime>().unwrap(),
         pre_time: None,
         is_completed: false,
@@ -687,4 +692,73 @@ async fn set_intake_status_returns_none_for_another_users_intake() {
     let (intake, _) = client.get_intake(intake_id).await.unwrap().unwrap();
     assert!(!intake.is_completed);
     assert_eq!(intake.version, 0);
+}
+
+#[tokio::test]
+async fn intake_upsert_stores_series_id_and_keeps_it_when_a_later_update_omits_it() {
+    let pool = test_pool().await;
+    let client = pills_server_test::db::DbClient::new(pool.clone());
+    let user_id = create_test_user(&pool).await;
+    let alice = create_test_person(&pool, user_id, "Alice").await;
+    let medication_id = Uuid::new_v4();
+    let intake_id = Uuid::new_v4();
+    let series_id = Uuid::new_v4();
+
+    client
+        .upsert_medication(user_id, medication_upsert(medication_id, "Aspirin", 0))
+        .await
+        .unwrap();
+
+    let created = client
+        .upsert_intake_with_persons(
+            user_id,
+            IntakeUpsert {
+                series_id: Some(series_id),
+                ..intake_upsert(intake_id, medication_id, vec![alice], 0)
+            },
+        )
+        .await
+        .unwrap();
+    match created {
+        IntakeUpsertOutcome::Ok(intake, _) => assert_eq!(intake.series_id, Some(series_id)),
+        _ => panic!("expected Ok"),
+    }
+
+    let updated = client
+        .upsert_intake_with_persons(
+            user_id,
+            intake_upsert(intake_id, medication_id, vec![alice], 0),
+        )
+        .await
+        .unwrap();
+    match updated {
+        IntakeUpsertOutcome::Ok(intake, _) => assert_eq!(intake.series_id, Some(series_id)),
+        _ => panic!("expected Ok"),
+    }
+}
+
+#[tokio::test]
+async fn intake_upsert_without_series_id_stores_null() {
+    let pool = test_pool().await;
+    let client = pills_server_test::db::DbClient::new(pool.clone());
+    let user_id = create_test_user(&pool).await;
+    let alice = create_test_person(&pool, user_id, "Alice").await;
+    let medication_id = Uuid::new_v4();
+
+    client
+        .upsert_medication(user_id, medication_upsert(medication_id, "Aspirin", 0))
+        .await
+        .unwrap();
+
+    let created = client
+        .upsert_intake_with_persons(
+            user_id,
+            intake_upsert(Uuid::new_v4(), medication_id, vec![alice], 0),
+        )
+        .await
+        .unwrap();
+    match created {
+        IntakeUpsertOutcome::Ok(intake, _) => assert_eq!(intake.series_id, None),
+        _ => panic!("expected Ok"),
+    }
 }
