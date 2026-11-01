@@ -4,13 +4,14 @@ use chrono::NaiveDateTime;
 use sqlx::{Error, query_as};
 use uuid::Uuid;
 
-const INTAKE_COLUMNS: &str = "id, user_account_id, medication_id, time, pre_time, \
+const INTAKE_COLUMNS: &str = "id, user_account_id, medication_id, series_id, time, pre_time, \
     is_completed, is_passed, is_canceled, created_at, updated_at, version";
 
 #[derive(Debug, Clone)]
 pub struct IntakeUpsert {
     pub id: Uuid,
     pub medication_id: Uuid,
+    pub series_id: Option<Uuid>,
     pub time: NaiveDateTime,
     pub pre_time: Option<NaiveDateTime>,
     pub is_completed: bool,
@@ -149,8 +150,8 @@ impl IntakeRepositoryTrait for DbClient {
                 let query = format!(
                     r#"
     INSERT INTO intakes(id, user_account_id, medication_id, time, pre_time,
-                         is_completed, is_passed, is_canceled)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                         is_completed, is_passed, is_canceled, series_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
     RETURNING {INTAKE_COLUMNS}
 "#
                 );
@@ -164,6 +165,7 @@ impl IntakeRepositoryTrait for DbClient {
                     .bind(intake.is_completed)
                     .bind(intake.is_passed)
                     .bind(intake.is_canceled)
+                    .bind(intake.series_id)
                     .fetch_one(&mut *tx)
                     .await?
             }
@@ -173,6 +175,7 @@ impl IntakeRepositoryTrait for DbClient {
     UPDATE intakes SET
         medication_id = $2, time = $3, pre_time = $4,
         is_completed = $5, is_passed = $6, is_canceled = $7,
+        series_id = COALESCE($9, series_id),
         version = version + 1, updated_at = NOW()
     WHERE id = $1 AND version = $8
     RETURNING {INTAKE_COLUMNS}
@@ -188,6 +191,7 @@ impl IntakeRepositoryTrait for DbClient {
                     .bind(intake.is_passed)
                     .bind(intake.is_canceled)
                     .bind(intake.base_version)
+                    .bind(intake.series_id)
                     .fetch_optional(&mut *tx)
                     .await?;
 
