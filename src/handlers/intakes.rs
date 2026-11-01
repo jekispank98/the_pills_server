@@ -82,6 +82,7 @@ pub async fn upsert_intake(
         id: intake_id,
         medication_id: body.medication_id.unwrap(),
         series_id: body.series_id,
+        dosage: body.dosage,
         time: body.time.unwrap(),
         pre_time: body.pre_time,
         is_completed: body.is_completed,

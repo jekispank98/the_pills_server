@@ -9,6 +9,7 @@ pub struct Intake {
     pub user_account_id: Uuid,
     pub medication_id: Uuid,
     pub series_id: Option<Uuid>,
+    pub dosage: f64,
     pub time: NaiveDateTime,
     pub pre_time: Option<NaiveDateTime>,
     pub is_completed: bool,
